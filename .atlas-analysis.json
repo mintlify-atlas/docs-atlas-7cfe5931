@@ -1,0 +1,139 @@
+{
+  "projectType": "saas",
+  "projectName": "PROPPR",
+  "projectDescription": "Real-time betting intelligence platform with automated value detection, arbitrage scanning, and alert distribution",
+  "theme": "aspen",
+  "primaryColor": "#10b981",
+  "lightColor": "#34d399",
+  "darkColor": "#059669",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Services",
+            "pages": [
+              "services/overview",
+              "services/alert-bots",
+              "services/data-services"
+            ]
+          },
+          {
+            "group": "Alert Bots",
+            "pages": [
+              "bots/team-bot",
+              "bots/player-bot",
+              "bots/ev-bot",
+              "bots/arb-bot",
+              "bots/horse-bot",
+              "bots/overtime-bot"
+            ]
+          },
+          {
+            "group": "Data Services",
+            "pages": [
+              "data/websocket-updater",
+              "data/api-poller",
+              "data/stats-update",
+              "data/grader"
+            ]
+          },
+          {
+            "group": "Shared Services",
+            "pages": [
+              "shared/overview",
+              "shared/grading",
+              "shared/mapping",
+              "shared/tracking",
+              "shared/api-clients"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "config/credentials",
+              "config/settings",
+              "config/presets"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/setup",
+              "deployment/systemd",
+              "deployment/monitoring"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/local-setup",
+              "development/running-locally",
+              "development/testing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/bot-interface",
+              "api/scanner-interface",
+              "api/calculator-interface"
+            ]
+          },
+          {
+            "group": "Shared Services",
+            "pages": [
+              "api/grading-api",
+              "api/mapping-api",
+              "api/tracking-api"
+            ]
+          },
+          {
+            "group": "Data Models",
+            "pages": [
+              "api/models/bet",
+              "api/models/fixture",
+              "api/models/odds"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time arbitrage detection across multiple bookmakers",
+    "Expected value calculation with Pinnacle-based odds",
+    "Multi-sport betting alerts via Telegram",
+    "Automated bet grading and P&L tracking",
+    "Blockchain betting integration (Optimism)",
+    "Microservices architecture with MongoDB storage"
+  ],
+  "publicApiSurface": [
+    "PropprTeamBot - Team market alerts (goals, corners, cards, shots)",
+    "PropprPlayerBot - Player prop alerts (goals, assists, shots, passes)",
+    "PropprEVBot - Expected value alerts with Kelly staking",
+    "PropprArbBot - Arbitrage detection and stake calculation",
+    "PropprHorseBot - Horse racing value detection",
+    "OvertimeBot - Blockchain betting automation",
+    "WebsocketUpdater - Real-time odds updates",
+    "UnifiedAPIPoller - Multi-source data collection",
+    "StatsUpdateFM - Player projections pipeline",
+    "SharedServices.grading - Unified bet grading system",
+    "SharedServices.mapping - Data normalization (leagues, markets)",
+    "SharedServices.tracking - Bet tracking and reconstruction"
+  ]
+}
