@@ -1,0 +1,222 @@
+---
+title: 'Production Setup'
+description: 'Configure PROPPR for production deployment on Ubuntu server'
+---
+
+## Server Requirements
+
+<CardGroup cols={2}>
+  <Card title="Operating System" icon="ubuntu">
+    Ubuntu 20.04 LTS or newer
+  </Card>
+  <Card title="Python" icon="python">
+    Python 3.11 or newer
+  </Card>
+  <Card title="Database" icon="database">
+    MongoDB (local or remote)
+  </Card>
+  <Card title="Memory" icon="memory">
+    Minimum 4GB RAM recommended
+  </Card>
+</CardGroup>
+
+## Production Directory Structure
+
+PROPPR services are deployed to `/opt/proppr/` on the production server:
+
+```bash
+/opt/proppr/
+├── PropprTeamBot/          # Team market alerts
+├── PropprPlayerBot/        # Player prop alerts
+├── PropprEVBot/            # Expected value alerts
+├── PropprArbBot/           # Arbitrage detection
+├── PropprHorseBot/         # Horse racing alerts
+├── OvertimeBot/            # Blockchain betting
+├── WebsocketUpdater/       # Real-time odds websocket
+├── UnifiedAPIPoller/       # API data collection
+├── StatsUpdateFM/          # Stats pipeline
+├── SharedServices/         # Shared modules
+│   ├── config/             # Configuration presets
+│   ├── grading/            # Bet grading system
+│   ├── mapping/            # Data normalization
+│   ├── sheets/             # Google Sheets sync
+│   ├── tracking/           # Bet tracking
+│   └── api/                # Shared API clients
+├── config/                 # Credentials & settings
+├── .env                    # Environment variables
+├── credentials.json        # Google Sheets service account
+└── turnstile_cookies.json  # FotMob API cookies
+```
+
+## Initial Server Setup
+
+<Steps>
+  <Step title="Update System Packages">
+    ```bash
+    sudo apt update && sudo apt upgrade -y
+    ```
+  </Step>
+
+  <Step title="Install Python 3.11">
+    ```bash
+    sudo apt install python3.11 python3.11-venv python3-pip -y
+    ```
+  </Step>
+
+  <Step title="Install MongoDB (if hosting locally)">
+    ```bash
+    # Import MongoDB GPG key
+    wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+
+    # Add MongoDB repository
+    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+
+    # Install MongoDB
+    sudo apt update
+    sudo apt install mongodb-org -y
+
+    # Start MongoDB
+    sudo systemctl start mongod
+    sudo systemctl enable mongod
+    ```
+  </Step>
+
+  <Step title="Create Production Directory">
+    ```bash
+    sudo mkdir -p /opt/proppr
+    sudo chown $USER:$USER /opt/proppr
+    ```
+  </Step>
+
+  <Step title="Clone Repository">
+    ```bash
+    git clone https://github.com/Jayzinq/PROPPR.git /tmp/proppr-source
+    ```
+  </Step>
+
+  <Step title="Deploy Code to Production Directory">
+    ```bash
+    # Deploy all modules
+    cd /tmp/proppr-source
+    
+    for module in config SharedServices PropprTeamBot PropprPlayerBot \
+                  PropprArbBot PropprEVBot OvertimeBot PropprHorseBot \
+                  WebsocketUpdater UnifiedAPIPoller StatsUpdateFM; do
+      if [ -d "$module" ]; then
+        rsync -av --exclude '__pycache__' --exclude '*.pyc' \
+              "$module/" "/opt/proppr/$module/"
+      fi
+    done
+    ```
+  </Step>
+</Steps>
+
+## Environment Configuration
+
+<Warning>
+  Never commit sensitive files (`.env`, `credentials.json`) to version control.
+</Warning>
+
+### Create .env File
+
+Create `/opt/proppr/.env` with your configuration:
+
+```bash /opt/proppr/.env
+# MongoDB Configuration
+MONGO_CONNECTION_STRING=mongodb://localhost:27017/
+MONGO_DATABASE=proppr
+
+# Telegram Bot Tokens
+TEAM_BOT_TOKEN=your_team_bot_token
+PLAYER_BOT_TOKEN=your_player_bot_token
+EV_BOT_TOKEN=your_ev_bot_token
+ARB_BOT_TOKEN=your_arb_bot_token
+HORSE_BOT_TOKEN=your_horse_bot_token
+OVERTIME_BOT_TOKEN=your_overtime_bot_token
+
+# External API Keys
+ODDS_API_KEY=your_odds_api_key
+FOOTYSTATS_API_KEY=your_footystats_key
+SPORTMONKS_API_KEY=your_sportmonks_key
+
+# Blockchain Configuration (Overtime)
+OPTIMISM_RPC_URL=https://mainnet.optimism.io
+PRIVATE_KEY=your_wallet_private_key
+
+# Logging
+LOG_LEVEL=INFO
+```
+
+### Google Sheets Credentials
+
+Place your Google Sheets service account credentials at `/opt/proppr/credentials.json`:
+
+```json /opt/proppr/credentials.json
+{
+  "type": "service_account",
+  "project_id": "your-project",
+  "private_key_id": "...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "proppr@your-project.iam.gserviceaccount.com",
+  "client_id": "...",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token"
+}
+```
+
+### FotMob Cookies (Optional)
+
+For stats updates, create `/opt/proppr/turnstile_cookies.json`:
+
+```json /opt/proppr/turnstile_cookies.json
+{
+  "cf_clearance": "your_cloudflare_clearance_token"
+}
+```
+
+## Python Dependencies
+
+Each service directory should have its dependencies installed:
+
+```bash
+# Install dependencies for a specific service
+cd /opt/proppr/PropprTeamBot
+python3.11 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+<Tip>
+  You can create a shared virtual environment in `/opt/proppr/venv` if all services use the same dependencies.
+</Tip>
+
+## File Permissions
+
+Ensure proper permissions for sensitive files:
+
+```bash
+chmod 600 /opt/proppr/.env
+chmod 600 /opt/proppr/credentials.json
+chmod 600 /opt/proppr/turnstile_cookies.json
+```
+
+## Verify Installation
+
+Test that Python can import PROPPR modules:
+
+```bash
+cd /opt/proppr
+export PYTHONPATH="/opt:${PYTHONPATH}"
+python3.11 -c "from PROPPR.config import get_mongo_connection_string; print('Config loaded successfully')"
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configure systemd Services" icon="gear" href="/deployment/systemd">
+    Set up automated service management
+  </Card>
+  <Card title="Set Up Monitoring" icon="chart-line" href="/deployment/monitoring">
+    Configure logging and health checks
+  </Card>
+</CardGroup>

@@ -1,0 +1,424 @@
+---
+title: 'Calculator Interface'
+description: 'Stake calculation for arbitrage and risk-free betting strategies'
+icon: 'calculator'
+---
+
+## Overview
+
+The StakeCalculator provides methods for calculating optimal stakes across multiple arbitrage betting strategies, including standard arbitrages, risk-free high/low returns, and LAY betting on exchanges.
+
+## StakeCalculator
+
+### Standard Arbitrage
+
+Calculate stakes for guaranteed equal profit regardless of outcome.
+
+```python
+from PROPPR.PropprArbBot.core.calculator.stake_calculator import StakeCalculator
+
+result = StakeCalculator.calculate_standard_arb(
+    total_stake=100.0,
+    legs=[
+        {"bookmaker": "Bet365", "side": "over", "odds": "2.10"},
+        {"bookmaker": "Pinnacle", "side": "under", "odds": "2.05"}
+    ],
+    exchange_commission=0.02
+)
+```
+
+<ParamField path="total_stake" type="float" required>
+  Total amount to stake across all legs
+</ParamField>
+
+<ParamField path="legs" type="array" required>
+  List of bet legs with bookmaker, side, and odds
+</ParamField>
+
+<ParamField path="exchange_commission" type="float" default="0.02">
+  Exchange commission rate (default 2% for Betfair)
+</ParamField>
+
+<ResponseField name="type" type="string">
+  Calculation type ("standard")
+</ResponseField>
+
+<ResponseField name="total_stake" type="float">
+  Total stake amount
+</ResponseField>
+
+<ResponseField name="profit_margin" type="float">
+  Profit margin percentage
+</ResponseField>
+
+<ResponseField name="guaranteed_profit" type="float">
+  Guaranteed profit amount
+</ResponseField>
+
+<ResponseField name="stakes" type="array">
+  Individual stake calculations
+  ```python
+  [
+      {
+          "bookmaker": "Bet365",
+          "side": "over",
+          "odds": 2.10,
+          "stake": 48.78,
+          "potential_return": 102.44
+      },
+      {
+          "bookmaker": "Pinnacle",
+          "side": "under",
+          "odds": 2.05,
+          "stake": 51.22,
+          "potential_return": 105.00
+      }
+  ]
+  ```
+</ResponseField>
+
+## LAY Betting
+
+### Standard LAY Arbitrage
+
+```python
+result = StakeCalculator.calculate_standard_arb(
+    total_stake=100.0,
+    legs=[
+        {
+            "bookmaker": "Bet365",
+            "side": "over",
+            "odds": "2.10",
+            "is_lay": False
+        },
+        {
+            "bookmaker": "Betfair Exchange",
+            "side": "over",
+            "odds": "2.15",
+            "is_lay": True
+        }
+    ],
+    exchange_commission=0.02
+)
+```
+
+<ResponseField name="is_lay_arb" type="boolean">
+  Whether this is a LAY arbitrage
+</ResponseField>
+
+<ResponseField name="exchange_commission" type="float">
+  Commission percentage charged by exchange
+</ResponseField>
+
+<ResponseField name="stakes" type="array">
+  Stake calculations including LAY details
+  ```python
+  [
+      {
+          "bookmaker": "Bet365",
+          "odds": 2.10,
+          "stake": 47.62,
+          "potential_return": 100.00,
+          "is_lay": False
+      },
+      {
+          "bookmaker": "Betfair Exchange",
+          "odds": 2.15,
+          "lay_stake": 46.51,
+          "stake": 46.51,
+          "liability": 53.49,
+          "commission": 2.0,
+          "potential_return": 45.58,
+          "is_lay": True
+      }
+  ]
+  ```
+</ResponseField>
+
+### LAY Mechanics
+
+When you LAY a bet:
+- You act as the bookmaker
+- **If selection wins**: You pay liability = stake × (odds - 1)
+- **If selection loses**: You win stake × (1 - commission)
+- Commission only charged on winnings, not losses
+
+## Risk-Free Strategies
+
+### RF High (Maximize Upside)
+
+Break even on lower odds outcome, maximize profit on higher odds.
+
+```python
+result = StakeCalculator.calculate_rf_high(
+    total_stake=100.0,
+    legs=[
+        {"bookmaker": "Bet365", "side": "home", "odds": "1.95"},
+        {"bookmaker": "Pinnacle", "side": "away", "odds": "3.20"}
+    ]
+)
+```
+
+<ResponseField name="type" type="string">
+  "rf_high"
+</ResponseField>
+
+<ResponseField name="low_return" type="float">
+  Return if lower odds outcome wins (break even)
+</ResponseField>
+
+<ResponseField name="low_roi" type="float">
+  ROI percentage for lower odds outcome (~0%)
+</ResponseField>
+
+<ResponseField name="high_return" type="float">
+  Return if higher odds outcome wins
+</ResponseField>
+
+<ResponseField name="high_roi" type="float">
+  ROI percentage for higher odds outcome (high profit)
+</ResponseField>
+
+### RF Low (Minimize Risk)
+
+Break even on higher odds outcome, moderate profit on lower odds.
+
+```python
+result = StakeCalculator.calculate_rf_low(
+    total_stake=100.0,
+    legs=[
+        {"bookmaker": "Bet365", "side": "home", "odds": "1.95"},
+        {"bookmaker": "Pinnacle", "side": "away", "odds": "3.20"}
+    ]
+)
+```
+
+<ResponseField name="type" type="string">
+  "rf_low"
+</ResponseField>
+
+<ResponseField name="low_return" type="float">
+  Return if higher odds outcome wins (break even)
+</ResponseField>
+
+<ResponseField name="high_return" type="float">
+  Return if lower odds outcome wins (moderate profit)
+</ResponseField>
+
+## 3-Way Markets
+
+### RF High (3-Way)
+
+For 1X2 markets (Home/Draw/Away).
+
+```python
+result = StakeCalculator.calculate_3way_rf_high(
+    total_stake=100.0,
+    legs=[
+        {"bookmaker": "Bet365", "side": "home", "odds": "2.10"},
+        {"bookmaker": "Pinnacle", "side": "draw", "odds": "3.40"},
+        {"bookmaker": "Betfair", "side": "away", "odds": "4.50"}
+    ]
+)
+```
+
+<ResponseField name="profit_outcome" type="string">
+  The outcome with profit potential
+</ResponseField>
+
+<ResponseField name="break_even_outcomes" type="array">
+  Outcomes that break even
+  ```python
+  ["home", "draw"]
+  ```
+</ResponseField>
+
+<ResponseField name="profit_amount" type="float">
+  Profit if profit outcome wins
+</ResponseField>
+
+<ResponseField name="profit_roi" type="float">
+  ROI percentage for profit outcome
+</ResponseField>
+
+### RF Mid (3-Way)
+
+Break even on highest and lowest odds, profit on mid odds.
+
+```python
+result = StakeCalculator.calculate_3way_rf_mid(
+    total_stake=100.0,
+    legs=[
+        {"bookmaker": "Bet365", "side": "home", "odds": "2.10"},
+        {"bookmaker": "Pinnacle", "side": "draw", "odds": "3.40"},
+        {"bookmaker": "Betfair", "side": "away", "odds": "4.50"}
+    ]
+)
+```
+
+### RF Low (3-Way)
+
+Break even on highest odds only, profit on both lower odds.
+
+```python
+result = StakeCalculator.calculate_3way_rf_low(
+    total_stake=100.0,
+    legs=[
+        {"bookmaker": "Bet365", "side": "home", "odds": "2.10"},
+        {"bookmaker": "Pinnacle", "side": "draw", "odds": "3.40"},
+        {"bookmaker": "Betfair", "side": "away", "odds": "4.50"}
+    ]
+)
+```
+
+<ResponseField name="profit_outcomes" type="array">
+  Outcomes with profit potential
+  ```python
+  ["home", "draw"]
+  ```
+</ResponseField>
+
+<ResponseField name="break_even_outcome" type="string">
+  The outcome that breaks even ("away")
+</ResponseField>
+
+## All Scenarios
+
+### Calculate All Strategies
+
+```python
+result = StakeCalculator.calculate_all_scenarios(
+    total_stake=100.0,
+    legs=[
+        {"bookmaker": "Bet365", "side": "over", "odds": "2.10"},
+        {"bookmaker": "Pinnacle", "side": "under", "odds": "2.05"}
+    ],
+    exchange_commission=0.02
+)
+```
+
+<ResponseField name="standard" type="object">
+  Standard arbitrage calculation
+</ResponseField>
+
+<ResponseField name="rf_high" type="object">
+  RF High calculation
+</ResponseField>
+
+<ResponseField name="rf_low" type="object">
+  RF Low calculation
+</ResponseField>
+
+<ResponseField name="rf_mid" type="object">
+  RF Mid calculation (3-way only)
+</ResponseField>
+
+## Market Display
+
+### Format Market Display
+
+```python
+market_display = StakeCalculator.format_market_display(
+    market={"name": "Totals", "hdp": 2.5},
+    event={"sport": "Football", "home": "Man Utd", "away": "Liverpool"}
+)
+# Returns: "Over/Under 2.5 Goals"
+```
+
+### Sport-Specific Units
+
+```python
+# Football: Goals
+"Over/Under 2.5 Goals"
+
+# Basketball: Points
+"Over/Under 215.5 Points"
+
+# American Football: Points
+"Over/Under 45.5 Points"
+
+# Counter-Strike: Rounds
+"Over/Under 26.5 Rounds"
+
+# Dota 2: Towers
+"Over/Under 15.5 Towers"
+```
+
+### Format Side Display
+
+```python
+side_display = StakeCalculator.format_side_display("over", "Totals")
+# Returns: "Over"
+
+side_display = StakeCalculator.format_side_display("home", "Moneyline")
+# Returns: "Home"
+```
+
+## Fixed Stake Calculation
+
+### Calculate with One Fixed Leg
+
+```python
+result = StakeCalculator.calculate_with_fixed_stake(
+    fixed_stake=50.0,
+    fixed_leg_index=0,
+    legs=[
+        {"bookmaker": "Bet365", "side": "over", "odds": "2.10"},
+        {"bookmaker": "Pinnacle", "side": "under", "odds": "2.05"}
+    ]
+)
+```
+
+<ParamField path="fixed_stake" type="float" required>
+  Fixed stake amount for one leg
+</ParamField>
+
+<ParamField path="fixed_leg_index" type="integer" required>
+  Index of leg with fixed stake (0 or 1)
+</ParamField>
+
+<ResponseField name="standard" type="object">
+  Standard arb with recalculated total stake
+</ResponseField>
+
+<ResponseField name="rf_high" type="object">
+  RF High with fixed leg
+</ResponseField>
+
+<ResponseField name="rf_low" type="object">
+  RF Low with fixed leg
+</ResponseField>
+
+## Example Usage
+
+### Complete Arbitrage Calculation
+
+```python
+# Define arbitrage opportunity
+arb_data = {
+    "id": "arb_12345",
+    "profitMargin": 3.73,
+    "legs": [
+        {"bookmaker": "Bet365", "side": "over", "odds": "2.10"},
+        {"bookmaker": "Pinnacle", "side": "under", "odds": "2.05"}
+    ]
+}
+
+# Calculate all strategies
+total_stake = 100.0
+results = StakeCalculator.calculate_all_scenarios(
+    total_stake=total_stake,
+    legs=arb_data["legs"]
+)
+
+# Display results
+print(f"Standard: {results['standard']['guaranteed_profit']:.2f}")
+print(f"RF High: {results['rf_high']['high_return']:.2f} / {results['rf_high']['low_return']:.2f}")
+print(f"RF Low: {results['rf_low']['high_return']:.2f} / {results['rf_low']['low_return']:.2f}")
+```
+
+## References
+
+- Source: `PropprArbBot/core/calculator/stake_calculator.py`
+- Related: [Scanner Interface](/api/scanner-interface)
+- Related: [Bet Model](/api/models/bet)

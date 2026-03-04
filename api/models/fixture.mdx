@@ -1,0 +1,497 @@
+---
+title: 'Fixture Model'
+description: 'Match/event data structures and fixture management'
+icon: 'calendar-days'
+---
+
+## Overview
+
+The Fixture Model defines data structures for match/event data, including participants, statistics, and odds from multiple bookmakers.
+
+## FotMob Fixture Structure
+
+### Core Fixture Document
+
+<ParamField path="general.matchId" type="integer" required>
+  Unique match ID
+</ParamField>
+
+<ParamField path="general.matchName" type="string" required>
+  Match name (e.g., "Liverpool vs Man City")
+</ParamField>
+
+<ParamField path="general.matchRound" type="string">
+  Competition round
+</ParamField>
+
+<ParamField path="general.leagueId" type="integer">
+  League/competition ID
+</ParamField>
+
+<ParamField path="general.leagueName" type="string">
+  League name
+</ParamField>
+
+<ParamField path="general.parentLeagueId" type="integer">
+  Parent league ID (for sub-competitions)
+</ParamField>
+
+### Header Object
+
+<ParamField path="header.teams" type="array" required>
+  Array of team objects
+  ```json
+  [
+    {
+      "id": 8650,
+      "name": "Liverpool",
+      "score": 2
+    },
+    {
+      "id": 8456,
+      "name": "Manchester City",
+      "score": 1
+    }
+  ]
+  ```
+</ParamField>
+
+<ParamField path="header.status" type="object" required>
+  Match status
+  ```json
+  {
+    "started": true,
+    "finished": true,
+    "cancelled": false,
+    "scoreStr": "2-1",
+    "reason": {
+      "short": "FT",
+      "long": "Full-Time"
+    },
+    "startDateStr": "Mar 10, 16:30"
+  }
+  ```
+</ParamField>
+
+### Statistics Content
+
+<ParamField path="content.stats.Periods.All.stats" type="array">
+  Full match statistics
+  ```json
+  [
+    {
+      "title": "Possession (%)",
+      "stats": ["48", "52"],
+      "highlighted": "away",
+      "type": "possession"
+    },
+    {
+      "title": "Shots",
+      "stats": ["15", "18"],
+      "highlighted": "away",
+      "type": "shots"
+    },
+    {
+      "title": "Shots on target",
+      "stats": ["6", "8"],
+      "highlighted": "away",
+      "type": "shotsOnTarget"
+    }
+  ]
+  ```
+</ParamField>
+
+### Player Statistics
+
+<ParamField path="content.playerStats" type="object">
+  Player performance statistics
+  ```json
+  {
+    "homeTeam": [
+      {
+        "playerId": 118748,
+        "name": {
+          "firstName": "Mohamed",
+          "lastName": "Salah",
+          "fullName": "Mohamed Salah"
+        },
+        "position": "FW",
+        "stats": {
+          "goals": 2,
+          "assists": 1,
+          "shots": 5,
+          "shotsOnTarget": 3,
+          "passes": 45,
+          "passesAccurate": 38,
+          "tackles": 2,
+          "rating": 8.5
+        }
+      }
+    ],
+    "awayTeam": [...]
+  }
+  ```
+</ParamField>
+
+### Lineup
+
+<ParamField path="content.lineup.homeTeam" type="object">
+  Home team lineup
+  ```json
+  {
+    "starters": [
+      {
+        "id": 118748,
+        "name": "Mohamed Salah",
+        "shirtNumber": 11,
+        "position": "FW",
+        "rating": 8.5
+      }
+    ],
+    "bench": [...],
+    "formation": "4-3-3"
+  }
+  ```
+</ParamField>
+
+## Team Odds Structure
+
+### Odds Document
+
+<ParamField path="id" type="integer" required>
+  Fixture ID
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  Match name
+</ParamField>
+
+<ParamField path="date" type="string" required>
+  Match date/time (ISO 8601)
+</ParamField>
+
+<ParamField path="sport" type="string" required>
+  Sport name
+</ParamField>
+
+<ParamField path="league" type="string" required>
+  League name
+</ParamField>
+
+<ParamField path="home" type="string" required>
+  Home team name
+</ParamField>
+
+<ParamField path="away" type="string" required>
+  Away team name
+</ParamField>
+
+<ParamField path="bookmakers" type="object" required>
+  Bookmaker odds
+  ```json
+  {
+    "Bet365": [
+      {
+        "name": "Totals",
+        "odds": [
+          {
+            "hdp": 2.5,
+            "over": 2.10,
+            "under": 1.85,
+            "updatedAt": "2024-03-10T14:25:00Z"
+          }
+        ]
+      }
+    ],
+    "Pinnacle": [...]
+  }
+  ```
+</ParamField>
+
+<ParamField path="updatedAt" type="string">
+  Last update timestamp
+</ParamField>
+
+## Fixture Statistics
+
+### Statistics Object
+
+<ParamField path="type_id" type="integer" required>
+  Statistic type ID
+</ParamField>
+
+<ParamField path="participant_id" type="integer">
+  Team/player ID
+</ParamField>
+
+<ParamField path="location" type="string">
+  "home" or "away"
+</ParamField>
+
+<ParamField path="data.value" type="integer" required>
+  Statistic value
+</ParamField>
+
+<ParamField path="data.type" type="string">
+  Data type ("total", "average", etc.)
+</ParamField>
+
+### Type ID Mapping
+
+```javascript
+const TYPE_IDS = {
+  GOALS: 52,
+  CORNERS: 34,
+  YELLOW_CARDS: 84,
+  RED_CARDS: 83,
+  SHOTS: 42,
+  SHOTS_ON_TARGET: 86,
+  TACKLES: 78,
+  OFFSIDES: 51,
+  FOULS: 56,
+  SAVES: 57,
+  PASSES: 80,
+  SUCCESSFUL_PASSES: 81,
+  INTERCEPTIONS: 100,
+  SUCCESSFUL_DRIBBLES: 109,
+  CROSSES: 98
+};
+```
+
+### Example Statistics
+
+```json
+[
+  {
+    "type_id": 52,
+    "participant_id": 8650,
+    "location": "home",
+    "data": {
+      "value": 2,
+      "type": "total"
+    }
+  },
+  {
+    "type_id": 52,
+    "participant_id": 8456,
+    "location": "away",
+    "data": {
+      "value": 1,
+      "type": "total"
+    }
+  },
+  {
+    "type_id": 34,
+    "participant_id": 8650,
+    "location": "home",
+    "data": {
+      "value": 6,
+      "type": "total"
+    }
+  }
+]
+```
+
+## Fixture Info Object
+
+### Common Fields
+
+<ParamField path="match_id" type="integer" required>
+  Match ID
+</ParamField>
+
+<ParamField path="match_name" type="string" required>
+  Match name
+</ParamField>
+
+<ParamField path="home" type="string" required>
+  Home team
+</ParamField>
+
+<ParamField path="away" type="string" required>
+  Away team
+</ParamField>
+
+<ParamField path="date" type="string" required>
+  Match date (YYYY-MM-DD)
+</ParamField>
+
+<ParamField path="time" type="string">
+  Match time (HH:MM)
+</ParamField>
+
+<ParamField path="league" type="string">
+  League name
+</ParamField>
+
+<ParamField path="sport" type="string">
+  Sport name
+</ParamField>
+
+<ParamField path="participants" type="array">
+  Array of participant objects
+  ```json
+  [
+    {
+      "id": 8650,
+      "name": "Liverpool",
+      "meta": {
+        "location": "home"
+      }
+    },
+    {
+      "id": 8456,
+      "name": "Manchester City",
+      "meta": {
+        "location": "away"
+      }
+    }
+  ]
+  ```
+</ParamField>
+
+## Fixture Status
+
+### Status Values
+
+- `NS` - Not Started
+- `LIVE` - In Progress
+- `HT` - Half Time
+- `FT` - Full Time
+- `AET` - After Extra Time
+- `PEN` - Penalties
+- `PST` - Postponed
+- `CANC` - Cancelled
+- `ABD` - Abandoned
+- `SUSP` - Suspended
+
+### Check if Finished
+
+```python
+def is_fixture_finished(fixture_data: dict) -> bool:
+    """Check if fixture has finished"""
+    status = fixture_data.get('header', {}).get('status', {})
+    return status.get('finished', False)
+```
+
+### Check if Started
+
+```python
+def is_fixture_started(fixture_data: dict) -> bool:
+    """Check if fixture has started"""
+    status = fixture_data.get('header', {}).get('status', {})
+    return status.get('started', False)
+```
+
+## Example Fixtures
+
+### Complete Fixture
+
+```json
+{
+  "general": {
+    "matchId": 4193204,
+    "matchName": "Liverpool vs Manchester City",
+    "matchRound": "Premier League - Round 29",
+    "leagueId": 47,
+    "leagueName": "Premier League"
+  },
+  "header": {
+    "teams": [
+      {
+        "id": 8650,
+        "name": "Liverpool",
+        "score": 2
+      },
+      {
+        "id": 8456,
+        "name": "Manchester City",
+        "score": 1
+      }
+    ],
+    "status": {
+      "started": true,
+      "finished": true,
+      "cancelled": false,
+      "scoreStr": "2-1",
+      "reason": {
+        "short": "FT",
+        "long": "Full-Time"
+      },
+      "startDateStr": "Mar 10, 16:30"
+    }
+  },
+  "content": {
+    "stats": {
+      "Periods": {
+        "All": {
+          "stats": [
+            {
+              "title": "Possession (%)",
+              "stats": ["48", "52"],
+              "highlighted": "away"
+            },
+            {
+              "title": "Shots",
+              "stats": ["15", "18"],
+              "highlighted": "away"
+            },
+            {
+              "title": "Shots on target",
+              "stats": ["6", "8"],
+              "highlighted": "away"
+            },
+            {
+              "title": "Corners",
+              "stats": ["6", "9"],
+              "highlighted": "away"
+            }
+          ]
+        }
+      }
+    },
+    "playerStats": {
+      "homeTeam": [
+        {
+          "playerId": 118748,
+          "name": {
+            "fullName": "Mohamed Salah"
+          },
+          "stats": {
+            "goals": 2,
+            "shots": 5,
+            "shotsOnTarget": 3
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+## Indexes
+
+### Team Odds Collection
+
+```javascript
+// Match lookup
+db.team_odds.createIndex({ "id": 1 }, { unique: true })
+
+// Date range queries
+db.team_odds.createIndex({ "date": 1 })
+
+// League filtering
+db.team_odds.createIndex({ "league": 1 })
+
+// Sport filtering
+db.team_odds.createIndex({ "sport": 1 })
+
+// Update timestamp
+db.team_odds.createIndex({ "updatedAt": 1 })
+```
+
+## References
+
+- Related: [Odds Model](/api/models/odds)
+- Related: [Mapping API](/api/mapping-api)
+- Related: [Grading API](/api/grading-api)

@@ -1,0 +1,615 @@
+---
+title: 'Arb Bot'
+description: 'Arbitrage betting opportunities across multiple bookmakers'
+icon: 'arrows-split-up-and-left'
+---
+
+## Overview
+
+The **Proppr Arb Bot** monitors odds across multiple bookmakers to identify arbitrage (arb) opportunities - situations where you can bet on all outcomes of an event and guarantee a profit regardless of the result.
+
+## Purpose
+
+Arb Bot finds discrepancies in odds between different bookmakers, allowing you to place opposing bets that lock in a risk-free profit. It supports both traditional back-back arbs and back-lay arbs using betting exchanges.
+
+## Markets Covered
+
+Arb Bot supports arbitrage across **all markets available through odds-api.io**:
+
+### Match Result Markets
+- 1X2 (Home/Draw/Away)
+- Moneyline (Home/Away)
+- Double Chance
+- Draw No Bet
+
+### Totals Markets
+- Over/Under Goals
+- Alternative Totals
+- Team Totals
+- Asian Total Goals
+
+### Handicap Markets  
+- Asian Handicap
+- European Handicap
+- Spread (American sports)
+
+### Specialty Markets
+- Both Teams To Score
+- Correct Score
+- Half Time/Full Time
+- Corners
+- Cards
+- Player Props
+
+<Info>
+Arb Bot is sport-agnostic and works with any sport where odds discrepancies exist across bookmakers.
+</Info>
+
+## Alert Criteria
+
+Arbitrage alerts are sent when:
+
+1. **Profit Margin**: Total arb margin exceeds minimum (default 1%)
+2. **Bookmaker Enabled**: All bookmakers in the arb are enabled by user
+3. **Not Muted**: Fixture is not muted by user
+4. **Line Consistency**: Handicap/line hasn't moved significantly
+5. **Not Duplicate**: Arb hasn't been sent to user before
+6. **Not SRL**: Not a Simulated Reality League match (virtual)
+7. **LAY Arbs**: User has LAY arbs enabled (if using exchanges)
+
+### Arbitrage Calculation
+
+```python
+# From arb_bot.py:337-365
+def calculate_arbitrage_margin(legs):
+    """
+    Calculate profit margin for an arbitrage opportunity.
+    
+    Formula:
+    - For each leg: stake% = 1 / odds
+    - Total stake% = sum of all leg stake%
+    - Profit margin% = (1 / total_stake% - 1) * 100
+    
+    Example (Back-Back Arb):
+    - Home @ 2.10 (Bet365): stake% = 1/2.10 = 47.62%
+    - Away @ 2.15 (William Hill): stake% = 1/2.15 = 46.51%
+    - Total stake% = 94.13%
+    - Profit margin = (1/0.9413 - 1) * 100 = 6.24%
+    
+    Example (Back-Lay Arb):
+    - Back Home @ 2.20 (Bet365): 100 / 2.20 = 45.45 units
+    - Lay Home @ 2.10 (Betfair): 100 / (2.10 - 1) = 90.91 units liability
+    - After 2% commission: profit locked in
+    """
+    total_inverse_odds = 0
+    
+    for leg in legs:
+        odds = leg.get('odds')
+        if not odds or odds <= 1.0:
+            return None
+        
+        # For LAY legs, adjust for liability
+        if leg.get('is_lay', False):
+            # Lay odds require calculating liability
+            exchange_commission = 0.02  # 2% standard Betfair commission
+            total_inverse_odds += 1 / (odds - 1) * (1 - exchange_commission)
+        else:
+            total_inverse_odds += 1 / odds
+    
+    if total_inverse_odds >= 1.0:
+        return None  # No arb (would lose money)
+    
+    profit_margin = (1 / total_inverse_odds - 1) * 100
+    return round(profit_margin, 2)
+```
+
+## User Commands
+
+<CodeGroup>
+
+```bash /start
+Initialize bot and view welcome message
+```
+
+```bash /settings
+Configure profit thresholds, bookmakers, and preferences
+```
+
+```bash /bookmakers
+Enable/disable specific bookmakers for arbs
+```
+
+```bash /margin [percent]
+Set minimum profit margin threshold (e.g., /margin 2.5)
+```
+
+```bash /stake [amount]
+Set your default total stake amount
+```
+
+```bash /scan
+Manually trigger arbitrage scan for current odds
+```
+
+```bash /custom
+Create custom arb by entering odds manually
+```
+
+```bash /mute [fixture]
+Mute alerts for a specific fixture or bookmaker
+```
+
+```bash /stats
+View your arbitrage statistics and total profit
+```
+
+```bash /help
+Display available commands
+```
+
+</CodeGroup>
+
+## Configuration Options
+
+### Profit Margin Settings
+
+```python
+# User configuration for arb filtering
+user_settings = {
+    "min_profit_margin": 1.0,     # Minimum profit % to alert
+    "total_stake": 100.0,          # Default total stake amount
+    "exchange_commission": 2.0,    # Betfair commission %
+    "alerts_enabled": True,
+    "lay_arbs_enabled": True       # Include back-lay arbs
+}
+```
+
+### Bookmaker Configuration
+
+```python
+# From constants.py:64-120
+DEFAULT_BOOKMAKER_SETTINGS = {
+    # Core enabled bookmakers (default on)
+    "Bet365": {"enabled": True},
+    "Betfair Exchange": {"enabled": True},
+    "William Hill": {"enabled": True},
+    "Ladbrokes": {"enabled": True},
+    "VBET": {"enabled": True},
+    "Sky Bet": {"enabled": True},
+    "Coral": {"enabled": True},
+    
+    # Optional bookmakers (disabled by default)
+    "Pinnacle": {"enabled": False},
+    "DraftKings": {"enabled": False},
+    "Betway": {"enabled": False},
+    # ... 40+ bookmakers
+}
+
+# Sharp bookmakers cannot be arbed against
+SHARP_BOOKMAKERS = {"FB Sports", "M88"}
+```
+
+### Fixture Muting
+
+Mute specific fixtures or bookmaker combinations:
+
+```python
+# Mute entire fixture
+mute_fixture(user_id, event_id, bookmaker=None)
+
+# Mute fixture for specific bookmaker only
+mute_fixture(user_id, event_id, bookmaker="Bet365")
+
+# Unmute
+unmute_fixture(user_id, event_id, bookmaker=None)
+```
+
+## Real Code Examples
+
+### Arbitrage Scanner
+
+```python
+# From db_odds_arbitrage_scanner.py:100-200
+class DBOddsArbitrageScanner:
+    """
+    Scans team_odds collection for arbitrage opportunities.
+    Faster than REST API as data is already in database.
+    """
+    
+    def scan_for_arbitrages(self, min_margin=1.0):
+        """
+        Find all current arbitrage opportunities.
+        
+        Process:
+        1. Load all events from team_odds
+        2. For each market, compare odds across bookmakers
+        3. Find combinations where total inverse odds < 1.0
+        4. Calculate stakes and profit
+        5. Filter by minimum margin
+        """
+        arbitrages = []
+        
+        # Get all active events (next 48 hours)
+        events = self.db['team_odds'].find({
+            'commence_time': {
+                '$gte': datetime.now(timezone.utc),
+                '$lte': datetime.now(timezone.utc) + timedelta(hours=48)
+            }
+        })
+        
+        for event in events:
+            event_id = event['id']
+            bookmakers_data = event.get('bookmakers', {})
+            
+            # Group odds by market name
+            markets_by_name = defaultdict(lambda: defaultdict(dict))
+            
+            for bookmaker, markets in bookmakers_data.items():
+                if bookmaker in SHARP_BOOKMAKERS:
+                    continue  # Skip sharp bookmakers
+                
+                for market in markets:
+                    market_name = market['name']
+                    
+                    for outcome in market.get('odds', []):
+                        side = outcome.get('home') or outcome.get('away') or outcome.get('over')
+                        if side:
+                            key = self._get_outcome_key(outcome)
+                            markets_by_name[market_name][key][bookmaker] = {
+                                'odds': side,
+                                'hdp': outcome.get('hdp'),
+                                'updatedAt': outcome.get('updatedAt')
+                            }
+            
+            # Find arbs for each market
+            for market_name, outcomes in markets_by_name.items():
+                arb = self._find_best_arb_combination(outcomes)
+                if arb and arb['profit_margin'] >= min_margin:
+                    arbitrages.append({
+                        'event_id': event_id,
+                        'event_name': event.get('name'),
+                        'market': market_name,
+                        'legs': arb['legs'],
+                        'profitMargin': arb['profit_margin'],
+                        'totalStake': 100,  # Default
+                        'commence_time': event.get('commence_time')
+                    })
+        
+        return arbitrages
+```
+
+### Stake Calculator
+
+```python
+# From stake_calculator.py:50-150
+class StakeCalculator:
+    """
+    Calculate optimal stake distribution for arbitrage bets.
+    """
+    
+    @staticmethod
+    def calculate_standard_arb(total_stake, legs, exchange_commission=0.02):
+        """
+        Calculate stakes for each leg to guarantee equal profit.
+        
+        For back-back arbs:
+        - Stake for each leg proportional to inverse odds
+        - Profit is equal across all outcomes
+        
+        For back-lay arbs:
+        - Calculate back stake
+        - Calculate lay liability
+        - Account for exchange commission
+        """
+        if not legs or len(legs) < 2:
+            return None
+        
+        # Calculate total inverse odds
+        total_inverse = sum(1/leg['odds'] for leg in legs)
+        
+        if total_inverse >= 1.0:
+            return None  # No profit possible
+        
+        stakes = []
+        
+        for leg in legs:
+            odds = leg['odds']
+            
+            if leg.get('is_lay', False):
+                # LAY stake calculation
+                # Liability = stake * (odds - 1)
+                stake_pct = 1 / (odds - 1) / total_inverse
+                stake = total_stake * stake_pct
+                liability = stake * (odds - 1)
+                
+                stakes.append({
+                    'bookmaker': leg['bookmaker'],
+                    'side': leg['side'],
+                    'odds': odds,
+                    'stake': round(stake, 2),
+                    'liability': round(liability, 2),
+                    'is_lay': True,
+                    'commission': exchange_commission * 100
+                })
+            else:
+                # BACK stake calculation
+                stake_pct = (1 / odds) / total_inverse
+                stake = total_stake * stake_pct
+                
+                stakes.append({
+                    'bookmaker': leg['bookmaker'],
+                    'side': leg['side'],
+                    'odds': odds,
+                    'stake': round(stake, 2),
+                    'potential_return': round(stake * odds, 2),
+                    'is_lay': False
+                })
+        
+        # Calculate guaranteed profit
+        profit_margin = (1 / total_inverse - 1) * 100
+        profit_amount = total_stake * (profit_margin / 100)
+        
+        return {
+            'stakes': stakes,
+            'total_stake': total_stake,
+            'profit_margin': round(profit_margin, 2),
+            'profit_amount': round(profit_amount, 2)
+        }
+```
+
+### Odds Refresh System
+
+```python
+# From arb_bot.py:216-366
+def _refresh_arb_if_needed(self, arb_data: dict) -> Optional[dict]:
+    """
+    Refresh odds for an arbitrage to check if it's still valid.
+    
+    Process:
+    1. Fetch current odds from team_odds collection
+    2. Check if handicap/line is still the same
+    3. Update odds for each leg
+    4. Recalculate profit margin
+    5. Return None if line moved or margin <= 0
+    """
+    event_id = arb_data.get("eventId")
+    legs = arb_data.get("legs", []) or []
+    
+    if not event_id or not legs:
+        return arb_data
+    
+    try:
+        # Fetch current event odds
+        event = self.db_manager.db['team_odds'].find_one({'id': event_id})
+    except Exception:
+        return arb_data
+    
+    if not event:
+        return arb_data
+    
+    updated_legs = []
+    any_changed = False
+    
+    for leg in legs:
+        bookmaker = leg.get("bookmaker")
+        market_name = leg.get("market_name") or arb_data.get("market")
+        hdp = leg.get("hdp") or leg.get("handicap")
+        side = leg.get("side")
+        
+        # Find matching odds in current data
+        markets = event.get("bookmakers", {}).get(bookmaker, [])
+        found = False
+        new_leg = dict(leg)
+        
+        for market in markets:
+            if market.get("name") != market_name:
+                continue
+            
+            for outcome in market.get("odds", []):
+                # Check handicap match
+                entry_hdp = outcome.get("hdp")
+                if hdp is not None and str(entry_hdp) != str(hdp):
+                    continue
+                
+                # Get current odds for this side
+                current_odds = outcome.get(side)
+                if current_odds and current_odds not in [None, "N/A", ""]:
+                    found = True
+                    old_odds = float(leg.get("odds", 0))
+                    new_odds = float(current_odds)
+                    
+                    # Check if odds changed
+                    if abs(new_odds - old_odds) > 0.01:
+                        any_changed = True
+                    
+                    new_leg["odds"] = str(new_odds)
+                    new_leg["updatedAt"] = outcome.get("updatedAt")
+                    break
+        
+        if not found:
+            # Odds no longer available, arb is invalid
+            return None
+        
+        updated_legs.append(new_leg)
+    
+    if not any_changed:
+        return arb_data  # No changes
+    
+    # Recalculate margin with updated odds
+    new_margin = calculate_arbitrage_margin(updated_legs)
+    
+    if not new_margin or new_margin <= 0:
+        return None  # No longer profitable
+    
+    # Update arb data
+    updated = dict(arb_data)
+    updated["legs"] = updated_legs
+    updated["profitMargin"] = round(new_margin, 2)
+    updated["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    
+    logger.info(f"Refreshed arb {arb_data.get('id')}: margin {new_margin:.2f}%")
+    
+    return updated
+```
+
+### Alert Formatting
+
+```python
+# From alert_formatter.py:100-200
+class AlertFormatter:
+    """
+    Format arbitrage alerts for Telegram delivery.
+    """
+    
+    @staticmethod
+    def format_arb_alert(arb_data, stake_calculation):
+        """
+        Format arbitrage opportunity as Telegram message.
+        
+        Includes:
+        - Event details (teams, sport, time)
+        - Profit margin and amount
+        - Stakes for each leg
+        - Bookmaker links
+        - Interactive buttons for stake adjustment
+        """
+        event_name = arb_data.get('event_name', 'Unknown Event')
+        market = arb_data.get('market', 'Unknown Market')
+        profit_margin = arb_data.get('profitMargin', 0)
+        profit_amount = stake_calculation.get('profit_amount', 0)
+        total_stake = stake_calculation.get('total_stake', 100)
+        
+        # Build message header
+        message = f"💰 **ARBITRAGE OPPORTUNITY**\n\n"
+        message += f"⚽️ **{event_name}**\n"
+        message += f"🎯 **{market}**\n\n"
+        message += f"📈 **Profit: {profit_margin:.2f}%** (${profit_amount:.2f})\n"
+        message += f"💵 **Total Stake: ${total_stake:.2f}**\n\n"
+        
+        # Add leg details
+        message += "**Legs:**\n"
+        for i, stake_info in enumerate(stake_calculation['stakes'], 1):
+            bookmaker = stake_info['bookmaker']
+            side = stake_info['side']
+            odds = stake_info['odds']
+            stake = stake_info['stake']
+            
+            if stake_info.get('is_lay'):
+                liability = stake_info['liability']
+                message += (
+                    f"{i}. **LAY {side}** @ {odds:.2f} on {bookmaker}\n"
+                    f"   Liability: ${liability:.2f}\n"
+                )
+            else:
+                returns = stake_info['potential_return']
+                message += (
+                    f"{i}. **{side}** @ {odds:.2f} on {bookmaker}\n"
+                    f"   Stake: ${stake:.2f} ➜ Returns: ${returns:.2f}\n"
+                )
+        
+        # Add timing info
+        commence_time = arb_data.get('commence_time')
+        if commence_time:
+            dt = datetime.fromisoformat(commence_time.replace('Z', '+00:00'))
+            message += f"\n⏰ **Starts:** {dt.strftime('%Y-%m-%d %H:%M UTC')}\n"
+        
+        # Create interactive buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("✏️ Edit Stakes", callback_data=f"edit_stakes:{arb_data['id']}"),
+                InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_arb:{arb_data['id']}")
+            ],
+            [
+                InlineKeyboardButton("🔕 Mute Fixture", callback_data=f"mute:{arb_data['eventId']}"),
+                InlineKeyboardButton("✅ Mark Placed", callback_data=f"placed:{arb_data['id']}")
+            ]
+        ]
+        
+        return message, InlineKeyboardMarkup(keyboard)
+```
+
+## Premium vs Demo Users
+
+### Demo User Limits
+
+```python
+# From arb_bot.py:470-495
+# Demo users (not in subscription channel) have restrictions:
+if not is_premium and arb_margin <= 1.0:
+    # Check 5-minute cooldown between alerts
+    last_alert_time = self.db_manager.get_last_alert_time(user_id)
+    if last_alert_time:
+        time_since_last = (datetime.now(timezone.utc) - last_alert_time).total_seconds()
+        if time_since_last < 530:  # 8m 50s cooldown
+            return False  # Skip alert
+    
+    # Check hourly limit (max 6 per hour)
+    alerts_last_hour = self.db_manager.get_user_alert_count(user_id, hours=1)
+    if alerts_last_hour >= 6:
+        return False  # Skip alert
+
+# Demo users only receive arbs <= 1% margin
+if not is_premium and arb_margin > 1.0:
+    # Show upgrade prompt for high-value arbs (7.5%+)
+    if arb_margin >= 7.5:
+        send_upgrade_prompt(user_id)
+    return False
+```
+
+### Premium Benefits
+
+- **No margin cap**: Receive all arbs regardless of profit %
+- **No cooldown**: Get alerts as soon as arbs are found
+- **No hourly limits**: Unlimited alerts per hour
+- **LAY arbs**: Access back-lay arbitrage opportunities
+- **Priority processing**: Faster alert delivery
+
+## Database Collections
+
+- **`arb_bets`**: Active arbitrage opportunities
+- **`sent_arb_alerts`**: Alert deduplication tracking
+- **`user_arb_settings`**: User configurations
+- **`muted_fixtures`**: User-muted fixtures/bookmakers
+- **`placed_arbs`**: User-tracked placed arbitrages
+- **`available_bookmakers`**: Bookmaker list and defaults
+
+## Technical Architecture
+
+```
+PropprArbBot/
+├── core/
+│   ├── bot/
+│   │   ├── arb_bot.py             # Main bot logic
+│   │   ├── alert_formatter.py     # Message formatting
+│   │   ├── arb_callback_handlers.py  # Button callbacks
+│   │   ├── custom_arb_handler.py  # Manual arb entry
+│   │   ├── scan_command_handler.py  # Manual scan
+│   │   └── telegram_group_handler.py  # Group parsing
+│   ├── calculator/
+│   │   └── stake_calculator.py    # Stake optimization
+│   └── scanner/
+│       ├── arbitrage_scanner.py      # REST API scanner
+│       └── db_odds_arbitrage_scanner.py  # DB scanner
+├── services/
+│   ├── api/
+│   │   └── api_service.py         # Odds API integration
+│   └── database/
+│       └── database.py            # MongoDB operations
+└── config/
+    └── constants.py                # Configuration
+```
+
+<Card title="Source Code" icon="code" href="https://github.com/yourusername/PROPPR/tree/main/PropprArbBot">
+  View the complete Arb Bot implementation
+</Card>
+
+## Related Bots
+
+<CardGroup cols={2}>
+  <Card title="EV Bot" icon="chart-line" href="/bots/ev-bot">
+    Sharp odds-based value detection
+  </Card>
+  <Card title="Overtime Bot" icon="coins" href="/bots/overtime-bot">
+    Crypto-based decentralized betting
+  </Card>
+</CardGroup>

@@ -1,0 +1,278 @@
+---
+title: 'Bot Interface'
+description: 'Base classes and command handlers for PROPPR Telegram bots'
+icon: 'robot'
+---
+
+## Overview
+
+The Bot Interface provides the foundation for all PROPPR Telegram bots, including command handlers, settings management, and user interaction patterns.
+
+## Base Bot Structure
+
+### Command Handlers
+
+All PROPPR bots implement standard command handlers:
+
+```python
+def start_command(update: Update, context: CallbackContext):
+    """Handle /start command - NO RESTRICTIONS"""
+    user_id = update.effective_user.id
+    username = update.effective_user.username or "User"
+    
+    # Ensure user has default settings
+    settings = db_manager.get_user_settings(user_id)
+    
+    # Track command usage
+    db_manager.track_command_usage(user_id, "start")
+```
+
+**Available Commands:**
+- `/start` - Initialize bot and show welcome message
+- `/settings` - Manage user preferences
+- `/stats` - View user statistics
+- `/help` - Display help information
+- `/scan` - Search for arbitrage opportunities (ArbBot)
+- `/connect <code>` - Link Telegram account to App
+
+### Settings Management
+
+```python
+def settings_command(update: Update, context: CallbackContext):
+    """Handle /settings command"""
+    user_id = update.effective_user.id
+    settings = db_manager.get_user_settings(user_id)
+    
+    keyboard = [
+        [InlineKeyboardButton("💷 Change Stake", callback_data="set_stake")],
+        [InlineKeyboardButton("📊 Min Margin", callback_data="set_margin")],
+        [InlineKeyboardButton("📚 Bookmakers", callback_data="manage_bookmakers")]
+    ]
+```
+
+**Settings Options:**
+- Default stake amount
+- Minimum arbitrage margin
+- Enabled bookmakers
+- Sport filters
+- Time filters
+- Exchange commissions
+- Alert preferences
+
+### Callback Handler Pattern
+
+```python
+def button_callback(update: Update, context: CallbackContext):
+    """Handle button callbacks"""
+    query = update.callback_query
+    query.answer()
+    
+    user_id = update.effective_user.id
+    data = query.data
+    
+    if data == "set_stake":
+        # Handle stake input
+        query.edit_message_text("💷 Enter your default stake amount:")
+        return STAKE_INPUT
+```
+
+## User Settings Schema
+
+<ParamField path="user_id" type="integer" required>
+  Telegram user ID
+</ParamField>
+
+<ParamField path="username" type="string">
+  Telegram username
+</ParamField>
+
+<ParamField path="default_stake" type="float" default="100">
+  Default stake amount in currency
+</ParamField>
+
+<ParamField path="min_arb_margin" type="float" default="1.0">
+  Minimum arbitrage margin percentage
+</ParamField>
+
+<ParamField path="bookmaker_settings" type="object">
+  Dictionary of enabled bookmakers
+  ```python
+  {
+      "Bet365": {"enabled": True},
+      "Pinnacle": {"enabled": False}
+  }
+  ```
+</ParamField>
+
+<ParamField path="sport_settings" type="object">
+  Dictionary of enabled sports
+</ParamField>
+
+<ParamField path="alerts_enabled" type="boolean" default="true">
+  Whether to receive alerts
+</ParamField>
+
+<ParamField path="is_premium" type="boolean" default="false">
+  Premium subscription status
+</ParamField>
+
+<ParamField path="exchange_commission_rates" type="object">
+  Custom commission rates for exchanges
+  ```python
+  {
+      "Betfair Exchange": 2.0,
+      "Matchbook": 1.5
+  }
+  ```
+</ParamField>
+
+## Bookmaker Management
+
+### Get All Bookmakers
+
+```python
+def get_all_available_bookmakers() -> dict:
+    """Get all available bookmakers (defaults + discovered)"""
+    return {
+        "Bet365": {"enabled": True, "region": "global"},
+        "Pinnacle": {"enabled": True, "region": "global"},
+        "Betfair Exchange": {"enabled": True, "region": "uk"}
+    }
+```
+
+### Toggle Bookmaker
+
+```python
+def toggle_bookmaker(user_id: int, bookmaker: str, enabled: bool):
+    """Toggle bookmaker on/off for user"""
+    db_manager.user_settings.update_one(
+        {"user_id": user_id},
+        {"$set": {f"bookmaker_settings.{bookmaker}.enabled": enabled}}
+    )
+```
+
+### Bookmaker Flags
+
+```python
+BOOKMAKER_FLAGS = {
+    "Bet365": "🌐",
+    "Pinnacle": "🌐",
+    "BetMGM": "🇺🇸",
+    "SkyBet": "🇬🇧",
+    "Betano": "🇧🇷"
+}
+
+def get_bookmaker_flag(bookmaker_name: str) -> str:
+    """Get the flag emoji for a bookmaker"""
+    return BOOKMAKER_FLAGS.get(bookmaker_name, "")
+```
+
+## Alert System
+
+### Send Alert
+
+```python
+def send_alert_to_user(user_id: int, arb_data: dict):
+    """Send arbitrage alert to a specific user"""
+    # Check if alert already sent
+    if db_manager.has_alert_been_sent(arb_data["id"], user_id):
+        return False
+    
+    # Apply user filters
+    filtered = api_service.apply_user_filters([arb_data], settings)
+    
+    if not filtered:
+        return False
+    
+    # Format and send
+    alert_text, reply_markup = AlertFormatter.format_arbitrage_alert(
+        arb_data, user_stake, user_id
+    )
+    
+    bot.send_message(
+        chat_id=user_id,
+        text=alert_text,
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.MARKDOWN
+    )
+    
+    db_manager.mark_alert_sent(arb_data["id"], user_id)
+    return True
+```
+
+## Premium Status
+
+### Check Premium
+
+```python
+def check_user_premium_status(user_id: int) -> tuple:
+    """Check if user has premium subscription"""
+    try:
+        member = updater.bot.get_chat_member(SUBSCRIPTION_CHANNEL_ID, user_id)
+        is_premium = member.status in ['member', 'administrator', 'creator']
+        return is_premium, True
+    except Exception as e:
+        return False, False
+```
+
+### Premium Features
+
+- No margin cap (receive ALL arbitrages)
+- No rate limiting
+- Custom stake amounts
+- All sports and markets
+- Priority support
+
+## Rate Limiting
+
+### Demo User Limits
+
+```python
+# Demo users (non-premium)
+if not is_premium and arb_margin <= 1.0:
+    # 5-minute cooldown between alerts
+    if time_since_last < 300:
+        return False
+    
+    # Max 6 alerts per hour
+    if alerts_last_hour >= 6:
+        return False
+```
+
+## Error Handling
+
+### Safe Message Edit
+
+```python
+def safe_edit_message(query, text, reply_markup=None):
+    """Safely edit a message, catching identical content errors"""
+    try:
+        query.message.edit_text(
+            text=text,
+            reply_markup=reply_markup
+        )
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            # Message is identical - ignore
+            pass
+        else:
+            raise
+```
+
+### Handle Blocked Users
+
+```python
+try:
+    bot.send_message(chat_id=user_id, text=message)
+except TelegramError as e:
+    if "bot was blocked" in str(e).lower():
+        db_manager.disable_alerts_for_blocked_user(user_id)
+        active_users.remove(user_id)
+```
+
+## References
+
+- Source: `PropprArbBot/core/bot/bot.py`
+- Source: `OvertimeBot/core/bot/overtime_bot.py`
+- Related: [Scanner Interface](/api/scanner-interface)
+- Related: [Calculator Interface](/api/calculator-interface)

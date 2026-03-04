@@ -1,0 +1,305 @@
+---
+title: 'Local Development Setup'
+description: 'Set up your Python environment for PROPPR development'
+keywords: ['python', 'setup', 'environment', 'dependencies', 'configuration']
+icon: 'laptop-code'
+---
+
+## Prerequisites
+
+Before setting up PROPPR locally, ensure you have:
+
+- **Python 3.11** or later
+- **MongoDB** access (local instance or Atlas connection)
+- **Git** for version control
+
+---
+
+## Clone the Repository
+
+Start by cloning the PROPPR repository:
+
+```bash
+git clone https://github.com/Jayzinq/PROPPR.git
+cd PROPPR
+```
+
+---
+
+## Python Environment Setup
+
+### Create Virtual Environment
+
+Create an isolated Python environment for PROPPR:
+
+```bash
+python -m venv venv
+```
+
+### Activate Virtual Environment
+
+<Tabs>
+  <Tab title="macOS/Linux">
+    ```bash
+    source venv/bin/activate
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```bash
+    venv\Scripts\activate
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+You should see `(venv)` in your terminal prompt when the environment is active.
+</Info>
+
+---
+
+## Install Dependencies
+
+Install all required Python packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+<Note>
+PROPPR uses dependencies including:
+- `pymongo` - MongoDB client
+- `python-telegram-bot` - Telegram bot API
+- `web3` - Blockchain integration (Overtime Bot)
+- `python-dotenv` - Environment variable management
+- `requests` - HTTP client for API calls
+</Note>
+
+---
+
+## Environment Configuration
+
+### Create `.env` File
+
+Create a `.env` file in the PROPPR root directory. This file stores sensitive credentials and configuration:
+
+```bash
+touch .env
+```
+
+### Configure Required Variables
+
+Add the following environment variables to your `.env` file:
+
+```bash .env
+# Environment
+ENVIRONMENT=development
+
+# MongoDB Connection
+MONGODB_URI_DEVELOPMENT="mongodb+srv://user:pass@cluster.mongodb.net/"
+MONGODB_URI_PRODUCTION="mongodb://localhost:27017/"
+MONGODB_DATABASE="proppr"
+
+# Telegram Bot Tokens
+TELEGRAM_TOKEN_TEAM_BOT="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+TELEGRAM_TOKEN_PLAYER_BOT="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+TELEGRAM_TOKEN_EV_BOT="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+TELEGRAM_TOKEN_ARB_BOT="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+TELEGRAM_TOKEN_HORSE_BOT="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+TELEGRAM_TOKEN_OVERTIME_BOT="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+
+# API Keys
+ODDS_API_KEY="your_odds_api_key"
+FOOTYSTATS_API_KEY="your_footystats_key"
+SPORTMONKS_API_TOKEN="your_sportmonks_token"
+
+# Google Sheets (optional for local)
+GOOGLE_SHEET_ID_TEAM="spreadsheet_id"
+GOOGLE_SHEET_ID_PLAYER="spreadsheet_id"
+
+# Admin
+ADMIN_USER_ID="your_telegram_user_id"
+```
+
+<Warning>
+Never commit the `.env` file to version control. It's already in `.gitignore` to prevent accidental commits.
+</Warning>
+
+### Configuration Loading
+
+PROPPR uses a centralized configuration system at `PROPPR/config/`:
+
+```python
+from PROPPR.config import (
+    get_mongo_connection_string,
+    get_mongo_database,
+    get_telegram_token,
+    is_production,
+    is_development,
+)
+
+# Automatically loads from .env in development
+mongo_uri = get_mongo_connection_string()
+db_name = get_mongo_database()
+token = get_telegram_token('team')  # For Team Bot
+```
+
+<Info>
+The config system automatically detects whether you're running on Linux (production) or macOS (development) and loads the appropriate MongoDB URI.
+</Info>
+
+---
+
+## Google Sheets Integration (Optional)
+
+For bet tracking features, you'll need Google Sheets API credentials:
+
+<Steps>
+  <Step title="Enable Google Sheets API">
+    1. Visit [Google Cloud Console](https://console.cloud.google.com/)
+    2. Create a new project or select existing
+    3. Enable the Google Sheets API
+  </Step>
+  
+  <Step title="Create service account">
+    1. Navigate to "Credentials" in your project
+    2. Create a service account
+    3. Download the JSON credentials file
+  </Step>
+  
+  <Step title="Place credentials file">
+    Save the downloaded JSON as `credentials.json` in your PROPPR root directory:
+    ```bash
+    PROPPR/credentials.json
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Verify Installation
+
+Test that your setup is working correctly:
+
+```bash
+python -c "
+from PROPPR.config import get_mongo_database, is_development
+print(f'Environment: {'Development' if is_development() else 'Production'}')
+print(f'Database: {get_mongo_database()}')
+print('✓ Configuration loaded successfully')
+"
+```
+
+Expected output:
+```
+Environment: Development
+Database: proppr
+✓ Configuration loaded successfully
+```
+
+---
+
+## MongoDB Setup
+
+PROPPR requires MongoDB for storing odds, alerts, and bet tracking data.
+
+### Option 1: MongoDB Atlas (Recommended for Development)
+
+<Steps>
+  <Step title="Create Atlas account">
+    Sign up at [mongodb.com/atlas](https://www.mongodb.com/atlas)
+  </Step>
+  
+  <Step title="Create cluster">
+    - Choose the free tier (M0)
+    - Select a region close to you
+  </Step>
+  
+  <Step title="Configure access">
+    - Add your IP address to the IP whitelist
+    - Create a database user with read/write permissions
+  </Step>
+  
+  <Step title="Get connection string">
+    Copy the connection string and add it to your `.env` as `MONGODB_URI_DEVELOPMENT`
+  </Step>
+</Steps>
+
+### Option 2: Local MongoDB
+
+For local development without internet dependency:
+
+<Tabs>
+  <Tab title="macOS (Homebrew)">
+    ```bash
+    brew tap mongodb/brew
+    brew install mongodb-community
+    brew services start mongodb-community
+    ```
+  </Tab>
+  <Tab title="Linux (Ubuntu)">
+    ```bash
+    sudo apt-get install -y mongodb-org
+    sudo systemctl start mongod
+    sudo systemctl enable mongod
+    ```
+  </Tab>
+  <Tab title="Docker">
+    ```bash
+    docker run -d -p 27017:27017 --name mongodb mongo:latest
+    ```
+  </Tab>
+</Tabs>
+
+Set your `.env` connection string:
+```bash
+MONGODB_URI_DEVELOPMENT="mongodb://localhost:27017/"
+```
+
+---
+
+## Project Structure
+
+Understanding PROPPR's directory layout:
+
+```
+PROPPR/
+├── config/                    # Centralized credentials & settings
+│   ├── credentials.py
+│   └── settings.py
+├── SharedServices/            # Shared modules across all services
+│   ├── config/               # Shared configuration
+│   ├── grading/              # Bet grading system
+│   ├── mapping/              # Data normalization
+│   ├── api/                  # API clients
+│   └── sheets/               # Google Sheets sync
+├── PropprTeamBot/            # Team betting alerts
+├── PropprPlayerBot/          # Player prop alerts
+├── PropprEVBot/              # Expected value alerts
+├── PropprArbBot/             # Arbitrage detection
+├── PropprHorseBot/           # Horse racing alerts
+├── OvertimeBot/              # Blockchain betting
+├── WebsocketUpdater/         # Real-time odds via websocket
+├── UnifiedAPIPoller/         # API data collection
+├── StatsUpdateFM/            # Stats collection pipeline
+├── scripts/
+│   ├── deploy/               # Deployment scripts
+│   ├── local/                # Local development helpers
+│   └── maintenance/          # Maintenance utilities
+├── tests/                    # Integration tests
+├── .env                      # Environment variables (create this)
+├── credentials.json          # Google Sheets credentials (optional)
+└── requirements.txt          # Python dependencies
+```
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Running Locally" icon="play" href="/development/running-locally">
+    Learn how to run bots and services in development
+  </Card>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Run tests and verify your changes
+  </Card>
+</CardGroup>

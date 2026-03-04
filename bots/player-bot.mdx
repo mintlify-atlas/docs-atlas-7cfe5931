@@ -1,0 +1,509 @@
+---
+title: 'Player Bot'
+description: 'Statistical value alerts for player prop markets'
+icon: 'user'
+---
+
+## Overview
+
+The **Proppr Player Bot** analyzes individual player statistics and sends alerts when bookmaker odds on player props (goals, assists, shots, cards) diverge significantly from statistical projections based on recent performance data.
+
+## Purpose
+
+Player Bot tracks player-level performance metrics across 40+ markets, comparing bookmaker odds against projected probabilities calculated from historical player stats, positional data, and contextual factors like opposition strength and home/away splits.
+
+## Markets Covered
+
+Player Bot supports **40+ player prop markets**:
+
+### Scoring Markets
+- Player Goals
+- Player Score 2+ Goals  
+- Player Score 3+ Goals
+- Anytime Goalscorer
+- First Goalscorer
+- Last Goalscorer
+- Player Goal or Assist
+- Player Header Goal
+- Player Goal From Outside Box
+
+### Shot Markets
+- Player Shots Total
+- Player Shots On Target
+- Player Shots Outside Box
+- Player Headed Shots
+- Player Set Piece Shots
+
+### Playmaking Markets  
+- Player Assists
+- Player Passes
+- Player Key Passes
+- Player Crosses
+
+### Defensive Markets
+- Player Tackles
+- Player Interceptions  
+- Player Clearances
+- Player Blocks
+
+### Disciplinary Markets
+- Player Yellow Card
+- Player Red Card
+- Player Fouls Committed
+- Player Fouls Won
+
+### Other Markets
+- Player Offsides
+- Goalkeeper Saves
+- Player Touches in Box
+- Player Dribbles
+
+<Note>
+See `PLAYER_MARKETS` in `/home/daytona/workspace/source/PropprPlayerBot/core/bot/player_bot.py:700-750` for complete market definitions.
+</Note>
+
+## Alert Criteria
+
+Alerts are triggered when:
+
+1. **Player Confirmed**: Player is in confirmed starting XI or bench (depending on settings)
+2. **EV Threshold Met**: Expected Value exceeds user minimum (default 5%)
+3. **Odds Range**: Odds fall within user's min/max (default 1.50-10.0)
+4. **Line Range**: Market line meets min/max thresholds
+5. **Data Sufficiency**: Player has minimum required match history
+6. **Position Match**: Player position aligns with market (e.g., GK for saves)
+
+### Lineup Status Filtering
+
+```python
+# From player_bot.py:1500-1550
+def filter_by_lineup_status(alerts, user_settings):
+    """
+    Filter alerts based on lineup confirmation status.
+    
+    Options:
+    - confirmed_only: Only XI confirmed players
+    - confirmed_or_bench: XI or bench players
+    - any: All players regardless of status
+    """
+    lineup_filter = user_settings.get('lineup_filter', 'confirmed_only')
+    
+    if lineup_filter == 'any':
+        return alerts  # No filtering
+    
+    filtered = []
+    for alert in alerts:
+        lineup_status = alert.get('lineup_status', 'unknown')
+        
+        if lineup_filter == 'confirmed_only':
+            if lineup_status == 'confirmed_xi':
+                filtered.append(alert)
+        elif lineup_filter == 'confirmed_or_bench':
+            if lineup_status in ['confirmed_xi', 'confirmed_bench']:
+                filtered.append(alert)
+    
+    return filtered
+```
+
+## User Commands
+
+### Core Commands
+
+<CodeGroup>
+
+```bash /start
+Initialize bot and show welcome message
+```
+
+```bash /settings
+Configure player markets, bookmakers, and thresholds
+```
+
+```bash /fixture [team]
+View upcoming fixtures with player projections
+```
+
+```bash /player [name]
+Search for player statistics and recent performance
+```
+
+```bash /xi [fixture]
+View confirmed lineups and player availability
+```
+
+```bash /value [player]
+See current value bets for a specific player
+```
+
+```bash /track
+Manually track a player prop bet
+```
+
+```bash /mystats  
+View betting performance across all tracked bets
+```
+
+```bash /live
+View live player statistics during matches
+```
+
+```bash /help
+Show all available commands
+```
+
+</CodeGroup>
+
+## Configuration Options
+
+### Per-Market Settings
+
+```python
+# Player market configuration structure
+market_settings = {
+    "Player Goals": {
+        "enabled": True,
+        "min_odds": 2.00,
+        "max_odds": 15.00,
+        "min_ev_pct": 5.0,
+        "min_line": 0.5,
+        "max_line": 2.5,
+        "min_chance_pct": 5.0,
+        "require_confirmed_xi": True,  # Player-specific option
+        "bookmaker_settings": {}
+    }
+}
+```
+
+### Lineup Requirements
+
+```python
+# User can configure lineup confirmation requirements
+lineup_settings = {
+    "lineup_filter": "confirmed_only",  # confirmed_only | confirmed_or_bench | any
+    "min_minutes_threshold": 60,        # Minimum expected minutes
+    "exclude_bench": True,               # Skip bench players
+    "only_starters": True                # Only starting XI
+}
+```
+
+### Scope Selection
+
+Choose statistical timeframe:
+
+- **Last 5**: Recent form
+- **Last 10**: Medium-term form  
+- **Season**: Full season stats
+
+```python
+# From player_bot.py:255-315
+def get_scoped_field_name(base_field_name, scope, is_player_stat=False):
+    """
+    Build scoped field names for player stat lookups.
+    Player stats are nested in avg_stats_{scope} containers.
+    
+    Examples:
+    - avg_stats + last10 -> avg_stats_last10
+    - projected_goals + season -> projected_goals_season
+    """
+    if base_field_name == "avg_stats":
+        return f"avg_stats_{scope}"
+    
+    return f"{base_field_name}_{scope}"
+```
+
+### Position-Aware Filtering
+
+```python
+# From player_bot.py:2000-2050  
+POSITION_MARKET_FILTERS = {
+    "Goalkeeper Saves": ["GK"],
+    "Player Goals": ["ST", "CF", "LW", "RW", "CAM"],
+    "Player Tackles": ["CB", "CDM", "CM", "RB", "LB"],
+    "Player Assists": ["CAM", "CM", "LW", "RW", "ST"]
+}
+
+def is_position_suitable(player_position, market_name):
+    """Check if player position matches market requirements"""
+    required_positions = POSITION_MARKET_FILTERS.get(market_name)
+    if not required_positions:
+        return True  # No position requirement
+    
+    return player_position in required_positions
+```
+
+## Real Code Examples
+
+### Player Stat Calculation
+
+```python
+# From player_bot.py:3000-3100
+def calculate_player_market_probability(player_stats, market_name, line, scope='last10'):
+    """
+    Calculate probability of player exceeding market line.
+    
+    Uses Poisson distribution for count markets (goals, shots, tackles)
+    and historical frequency for binary markets (cards, goals)
+    """
+    stat_key = MARKET_TO_STAT_MAP.get(market_name)
+    if not stat_key:
+        return None
+    
+    # Get scoped stats container
+    avg_stats = player_stats.get(f'avg_stats_{scope}', {})
+    player_avg = avg_stats.get(stat_key)
+    
+    if player_avg is None:
+        return None
+    
+    # For count stats, use Poisson distribution
+    if market_name in COUNT_MARKETS:
+        from scipy.stats import poisson
+        # P(X > line) = 1 - P(X <= line)
+        prob_under = poisson.cdf(line, player_avg)
+        prob_over = 1 - prob_under
+        return prob_over * 100
+    
+    # For binary stats, use frequency
+    if market_name in BINARY_MARKETS:
+        # Convert average to probability (0-1 scale)
+        return min(player_avg * 100, 100)
+    
+    return None
+```
+
+### Formation-Based Position Mapping
+
+```python
+# From player_bot.py:211-253
+FORMATION_MAPPINGS = {
+    "4-2-3-1": {
+        2: ["RB", "CB", "CB", "LB"],
+        3: ["RDM", "LDM"], 
+        4: ["RAM", "CAM", "LAM"],
+        5: ["ST"]
+    },
+    "4-3-3": {
+        2: ["RB", "CB", "CB", "LB"],
+        3: ["RCM", "CM", "LCM"],
+        4: ["RW", "ST", "LW"]
+    },
+    # ... 30+ formations mapped
+}
+
+def map_lineup_to_positions(lineup_list, formation):
+    """
+    Map lineup order to specific positions based on formation.
+    Enables accurate position-based filtering.
+    
+    Args:
+        lineup_list: List of players in lineup order [GK, DEF1, DEF2, ...]
+        formation: Formation string (e.g., "4-3-3")
+    
+    Returns:
+        Dict mapping player_id -> position abbreviation
+    """
+    formation_map = FORMATION_MAPPINGS.get(formation)
+    if not formation_map:
+        return {}  # Unknown formation
+    
+    position_assignments = {}
+    lineup_idx = 1  # Skip GK (index 0)
+    
+    for line_num in sorted(formation_map.keys()):
+        positions = formation_map[line_num]
+        for pos in positions:
+            if lineup_idx < len(lineup_list):
+                player = lineup_list[lineup_idx]
+                position_assignments[player['id']] = pos
+                lineup_idx += 1
+    
+    return position_assignments
+```
+
+### Player Name Matching
+
+```python
+# From player_bot.py:3500-3600
+def enhanced_player_name_match(query_name, candidate_names, threshold=0.85):
+    """
+    Match player names handling:
+    - Diacritics (José -> Jose)
+    - Nicknames (Neymar Jr -> Neymar)
+    - Name order (Silva Ronaldo -> Ronaldo Silva)
+    - Partial matches
+    
+    Uses fuzzy matching with configurable threshold.
+    """
+    from difflib import SequenceMatcher
+    from PROPPR.SharedServices.utils.text_normalization import comprehensive_normalize_text
+    
+    # Normalize query
+    query_norm = comprehensive_normalize_text(query_name)
+    
+    best_match = None
+    best_score = 0
+    
+    for candidate in candidate_names:
+        candidate_norm = comprehensive_normalize_text(candidate)
+        
+        # Calculate similarity score
+        score = SequenceMatcher(None, query_norm, candidate_norm).ratio()
+        
+        # Check token overlap (handle name order variations)
+        query_tokens = set(query_norm.split())
+        candidate_tokens = set(candidate_norm.split())
+        token_overlap = len(query_tokens & candidate_tokens) / len(query_tokens | candidate_tokens)
+        
+        # Combined score (weighted average)
+        final_score = (score * 0.7) + (token_overlap * 0.3)
+        
+        if final_score > best_score and final_score >= threshold:
+            best_score = final_score
+            best_match = candidate
+    
+    return best_match, best_score
+```
+
+### Alert Batching
+
+```python
+# From player_bot.py:4000-4100
+class PlayerAlertBatcher:
+    """
+    Batch player alerts by fixture to reduce message spam.
+    Groups alerts for same fixture and sends as single message.
+    """
+    
+    def __init__(self, batch_window_seconds=45):
+        self.pending_alerts = defaultdict(list)  # fixture_id -> [alerts]
+        self.batch_timers = {}  # fixture_id -> Timer
+        self.batch_window = batch_window_seconds
+    
+    def queue_alert(self, alert_data):
+        """Add alert to batch queue"""
+        fixture_id = alert_data['fixture_id']
+        self.pending_alerts[fixture_id].append(alert_data)
+        
+        # Start timer if first alert for fixture
+        if fixture_id not in self.batch_timers:
+            timer = threading.Timer(
+                self.batch_window,
+                lambda: self._send_batched_alerts(fixture_id)
+            )
+            timer.start()
+            self.batch_timers[fixture_id] = timer
+    
+    def _send_batched_alerts(self, fixture_id):
+        """Send all queued alerts for fixture as single message"""
+        alerts = self.pending_alerts.pop(fixture_id, [])
+        if not alerts:
+            return
+        
+        # Group alerts by player
+        by_player = defaultdict(list)
+        for alert in alerts:
+            by_player[alert['player_name']].append(alert)
+        
+        # Format combined message
+        message = self._format_fixture_alert_group(
+            fixture_id, by_player
+        )
+        
+        # Send to all subscribed users
+        self._broadcast_to_users(message, fixture_id)
+```
+
+## Database Collections
+
+Player Bot uses these MongoDB collections:
+
+- **`player_projections`**: Player statistical predictions and averages
+- **`lineups`**: Confirmed starting XIs and bench players
+- **`player_odds`**: Real-time bookmaker odds for player props
+- **`fixtures_fm`**: Fixture schedule and metadata
+- **`player_user_settings`**: User configurations
+- **`sent_player_alerts`**: Deduplication tracking
+- **`tracked_player_bets`**: Bet tracking and grading
+
+## Performance Optimizations
+
+### Memory Management
+
+```python
+# From player_bot.py:158-210
+def log_memory_telemetry(tag: str = "periodic") -> None:
+    """
+    Track memory usage and cache sizes to prevent OOM issues.
+    Logs RSS memory and size of major caches.
+    """
+    try:
+        rss_bytes = _read_process_rss_bytes()
+        rss_mb = round(rss_bytes / (1024 * 1024), 1)
+        
+        cache_sizes = {
+            "paginated_alert_store": len(paginated_alert_store),
+            "session_roster_cache": len(session_roster_cache),
+            "missing_projections_cache": len(missing_projections_cache)
+        }
+        
+        logging.info(f"🧠 [MEM] {tag}: rss_mb={rss_mb}, caches={cache_sizes}")
+    except Exception as e:
+        logging.error(f"Failed to log memory telemetry: {e}")
+```
+
+### Job Run Locks
+
+```python
+# From player_bot.py:185-200
+def run_singleton_job(job_name: str, fn, *args, **kwargs):
+    """
+    Ensure only one instance of a job runs at a time.
+    Prevents overlapping executions that could cause race conditions.
+    """
+    lock = _get_job_run_lock(job_name)
+    if not lock.acquire(blocking=False):
+        logging.warning(f"Skipping '{job_name}' - previous run still active")
+        return None
+    
+    try:
+        return fn(*args, **kwargs)
+    finally:
+        lock.release()
+```
+
+## Technical Architecture
+
+```
+PropprPlayerBot/
+├── core/
+│   ├── bot/
+│   │   └── player_bot.py        # Main bot (5000+ lines)
+│   ├── matching/
+│   │   ├── contextual_matcher.py  # Smart name matching
+│   │   ├── fixture_matcher.py     # Fixture resolution
+│   │   └── auto_mapper.py         # Player ID mapping
+│   └── odds/
+│       └── normalizer.py         # Odds normalization
+├── services/
+│   ├── alerts/                   # Alert generation
+│   └── telegram/
+│       └── handlers/
+│           └── preset_handlers.py  # Optimal+ Presets
+└── config/
+    └── constants.py
+```
+
+<Card title="Source Code" icon="code" href="https://github.com/yourusername/PROPPR/tree/main/PropprPlayerBot">
+  View the complete Player Bot implementation
+</Card>
+
+## Related Bots
+
+<CardGroup cols={2}>
+  <Card title="Team Bot" icon="users" href="/bots/team-bot">
+    Team market statistics and alerts
+  </Card>
+  <Card title="EV Bot" icon="chart-line" href="/bots/ev-bot">
+    Sharp odds-based value detection
+  </Card>
+</CardGroup>

@@ -1,0 +1,426 @@
+---
+title: 'Team Bot'
+description: 'Statistical value alerts for team markets in soccer'
+icon: 'users'
+---
+
+## Overview
+
+The **Proppr Team Bot** monitors soccer team markets (goals, corners, cards, shots) and sends alerts when bookmaker odds significantly diverge from statistical projections based on recent team performance data.
+
+## Purpose
+
+Team Bot analyzes team-level statistics to identify value betting opportunities across dozens of markets. It tracks historical performance across multiple timeframes (last 5, last 10, season) and compares bookmaker odds against projected probabilities to find edges.
+
+## Markets Covered
+
+Team Bot supports **60+ team markets** across multiple categories:
+
+### Goal Markets
+- Total Goals (Match totals)
+- Team Total Goals (Home/Away)
+- First Team to Score
+- Alternative Goal Lines
+
+### Corner Markets  
+- Total Corners
+- Team Corners (Home/Away)
+- Corner Spread/Handicap
+- Most Corners
+- First Team To Take Corner
+
+### Card Markets
+- Total Cards (Yellow + Red)
+- Team Cards (Home/Away)
+- Bookings Totals
+- Bookings Spread
+- First Team To Be Booked
+
+### Shot Markets
+- Total Shots
+- Total Shots On Target
+- Team Shots (Home/Away)
+- Shots Outside Box
+- Headed Shots
+
+### Statistical Markets
+- Fouls Committed
+- Tackles
+- Offsides  
+- Throw-ins
+- Free Kicks
+- Goal Kicks
+- Goalkeeper Saves
+- Set Piece Markets (From Corner, Free Kick, Fast Break)
+
+<Note>
+See `STAT_FIELD_MAP` in `/home/daytona/workspace/source/PropprTeamBot/core/bot/team_bot.py:553-858` for complete market mappings.
+</Note>
+
+## Alert Criteria
+
+Alerts are triggered when:
+
+1. **EV Threshold Met**: Expected Value exceeds user-configured minimum (default 5%)
+2. **Odds Range**: Bookmaker odds fall within user's min/max range (default 1.50-10.0)
+3. **Chance Range**: Projected probability meets minimum threshold (default 10%)
+4. **Line Range**: Market line falls within configured min/max
+5. **Data Availability**: Team has sufficient historical data for selected scope
+6. **League Coverage**: League has market data in `known_leagues_fm` collection
+
+### Calculation Example
+
+```python
+# From team_bot.py:3000-3100
+# Calculate expected value
+fair_odds = 1 / (predicted_probability / 100)
+ev_pct = ((bookmaker_odds / fair_odds) - 1) * 100
+
+# Example:
+# Predicted probability: 60% (0.60)
+# Fair odds: 1/0.60 = 1.67
+# Bookmaker odds: 2.00
+# EV: ((2.00/1.67) - 1) * 100 = 19.8%
+```
+
+## User Commands
+
+### Core Commands
+
+<CodeGroup>
+
+```bash /start
+Initialize bot and show welcome message with setup wizard
+```
+
+```bash /settings  
+Configure markets, bookmakers, thresholds, and preferences
+```
+
+```bash /fixture [team name]
+Search for upcoming fixtures and view detailed team statistics
+```
+
+```bash /value [fixture]
+View current value bets for a specific fixture with EV calculations
+```
+
+```bash /stats [team]
+View comprehensive team statistics across all tracked markets
+```
+
+```bash /today
+List all fixtures with alerts scheduled for today
+```
+
+```bash /live
+View live match statistics and in-play alerts
+```
+
+```bash /track
+Manually track a bet for performance monitoring
+```
+
+```bash /mystats
+View your betting performance and ROI statistics
+```
+
+```bash /help
+Display available commands and usage instructions
+```
+
+</CodeGroup>
+
+## Configuration Options
+
+### Market Settings
+
+Each market can be independently configured:
+
+```python
+# Per-market configuration structure
+market_settings = {
+    "Total Goals": {
+        "enabled": True,
+        "min_odds": 1.50,
+        "max_odds": 6.00,
+        "min_ev_pct": 5.0,
+        "min_line": 0.5,
+        "max_line": 5.5,
+        "min_chance_pct": 10.0,
+        "market_direction": "both",  # over, under, or both
+        "bookmaker_settings": {}
+    }
+}
+```
+
+### Scope Selection
+
+Choose data timeframe for statistical analysis:
+
+- **Last 5**: Recent form (last 5 matches)
+- **Last 10**: Medium-term form (last 10 matches)  
+- **Season**: Full season statistics
+
+```python
+# From team_bot.py:255-315
+def get_scoped_field_name(base_field_name, scope, time_period=None):
+    """
+    Builds scoped field names for predicted_lines lookups.
+    Examples:
+    - home_averages + last10 -> home_averages_last10
+    - predicted_lines + season -> predicted_lines_season
+    - 1st_half_home_averages + last5 -> 1st_half_home_averages_last5
+    """
+```
+
+### Bookmaker Filtering
+
+Enable/disable specific bookmakers per market:
+
+```python
+bookmaker_settings = {
+    "Bet365": {"enabled": True},
+    "William Hill": {"enabled": True}, 
+    "Sky Bet": {"enabled": False},
+    "Kambi": {"enabled": True}
+}
+```
+
+### Optimal+ Presets
+
+<Info>
+Founder and Club Legend tiers have access to **Optimal+ Presets** - pre-configured settings optimized from 14 days of historical performance data.
+</Info>
+
+Presets include:
+- **Route One**: Lowest volume, highest ROI (~5 bets/week)
+- **Shoot On Sight**: Low-medium volume, high ROI (~15 bets/week)  
+- **Work The Space**: Medium volume, positive ROI (~25 bets/week)
+- **Gegenpress**: Med-high volume, positive ROI (~40 bets/week)
+- **Tiki-Taka**: High volume, positive ROI (~60 bets/week)
+
+Presets auto-update every 48 hours based on recent performance.
+
+## Real Code Examples
+
+### Alert Processing Pipeline
+
+```python
+# From team_bot.py:2000-2100  
+def process_fixture_for_alerts(fixture_doc, user_settings):
+    """
+    Main alert processing flow:
+    1. Load fixture and team projections from predicted_lines
+    2. Fetch bookmaker odds from team_odds collection
+    3. Calculate EV for each market/line combination
+    4. Filter by user settings (thresholds, bookmakers, etc)
+    5. Format and queue alerts for delivery
+    """
+    fixture_id = fixture_doc.get('id')
+    scope = user_settings.get('preference_scope', 'last10')
+    
+    # Get team projections with selected scope
+    home_team_id = fixture_doc.get('home_team_id')
+    away_team_id = fixture_doc.get('away_team_id')
+    
+    home_proj = get_team_projection(fixture_id, home_team_id, scope)
+    away_proj = get_team_projection(fixture_id, away_team_id, scope)
+    
+    # Calculate EVs for all markets
+    alerts = []
+    for market_name in user_settings.get('enabled_markets', []):
+        market_alerts = calculate_market_ev(
+            fixture_doc, home_proj, away_proj, 
+            market_name, user_settings
+        )
+        alerts.extend(market_alerts)
+    
+    return alerts
+```
+
+### EV Calculation
+
+```python
+# From team_bot.py:3000-3150
+def calculate_team_market_ev(predicted_value, odds_data, market_settings):
+    """
+    Calculate Expected Value for a team market
+    
+    Args:
+        predicted_value: Statistical projection (e.g., 2.5 goals)
+        odds_data: Bookmaker odds for over/under lines
+        market_settings: User thresholds and preferences
+    
+    Returns:
+        List of value alerts meeting EV threshold
+    """
+    alerts = []
+    
+    for line, odds in odds_data.items():
+        # Calculate probability based on predicted value and line
+        over_prob = calculate_over_probability(predicted_value, line)
+        under_prob = 1 - over_prob
+        
+        # Calculate fair odds
+        fair_over = 1 / over_prob if over_prob > 0 else None
+        fair_under = 1 / under_prob if under_prob > 0 else None
+        
+        # Check over bet
+        if odds.get('over') and fair_over:
+            ev_over = ((odds['over'] / fair_over) - 1) * 100
+            if ev_over >= market_settings['min_ev_pct']:
+                alerts.append({
+                    'side': 'over',
+                    'line': line,
+                    'odds': odds['over'],
+                    'ev_pct': ev_over,
+                    'fair_odds': fair_over,
+                    'probability': over_prob * 100
+                })
+        
+        # Check under bet  
+        if odds.get('under') and fair_under:
+            ev_under = ((odds['under'] / fair_under) - 1) * 100
+            if ev_under >= market_settings['min_ev_pct']:
+                alerts.append({
+                    'side': 'under',
+                    'line': line, 
+                    'odds': odds['under'],
+                    'ev_pct': ev_under,
+                    'fair_odds': fair_under,
+                    'probability': under_prob * 100
+                })
+    
+    return alerts
+```
+
+### Bookmaker Normalization
+
+```python
+# From team_bot.py:191-224
+def normalize_bookmaker_name(bookmaker_name):
+    """
+    Normalize bookmaker names by removing suffixes and handling spelling variations.
+    
+    Examples:
+        'Bet365 (no latency)' -> 'Bet365'
+        'Skybet' -> 'Sky Bet'
+        'Polymarket' -> 'Polymarket'  # Now distinct from William Hill
+    """
+    if not bookmaker_name:
+        return bookmaker_name
+    
+    # Remove '(no latency)' suffix
+    normalized = bookmaker_name.replace(' (no latency)', '').strip()
+    
+    # Standardize variations
+    BOOKMAKER_NAME_MAP = {
+        "Skybet": "Sky Bet",
+    }
+    
+    return BOOKMAKER_NAME_MAP.get(normalized, normalized)
+```
+
+## Database Collections
+
+Team Bot interacts with several MongoDB collections:
+
+- **`predicted_lines`**: Team statistical projections and predictions
+- **`team_odds`**: Real-time bookmaker odds for team markets
+- **`fixtures_fm`**: Fixture schedule and metadata
+- **`known_leagues_fm`**: Supported leagues with market coverage
+- **`team_user_settings`**: User preferences and configurations
+- **`sent_team_alerts`**: Alert deduplication tracking
+- **`tracked_bets`**: User bet tracking and grading
+
+## Performance Tracking
+
+```python
+# From team_bot.py:4000-4100
+class BetTrackingSystem:
+    """
+    Unified bet tracking across Team and Player bots.
+    Automatically grades bets when results are available.
+    """
+    
+    def track_bet(self, user_id, alert_data, stake, odds):
+        """Record a new tracked bet"""
+        bet_doc = {
+            'user_id': user_id,
+            'fixture_id': alert_data['fixture_id'],
+            'market_name': alert_data['market_name'],
+            'bet_side': alert_data['bet_side'],
+            'line': alert_data.get('line'),
+            'odds': odds,
+            'stake': stake,
+            'status': 'pending',
+            'placed_at': datetime.now(timezone.utc),
+            'graded': False
+        }
+        self.tracked_bets.insert_one(bet_doc)
+    
+    def grade_pending_bets(self):
+        """Grade all pending bets with available results"""
+        pending = self.tracked_bets.find({'graded': False})
+        for bet in pending:
+            result = self.fetch_result(bet['fixture_id'])
+            if result:
+                outcome = self.determine_outcome(bet, result)
+                self.tracked_bets.update_one(
+                    {'_id': bet['_id']},
+                    {'$set': {
+                        'graded': True,
+                        'outcome': outcome,
+                        'result': result,
+                        'graded_at': datetime.now(timezone.utc)
+                    }}
+                )
+```
+
+## Technical Architecture
+
+### Main Components
+
+```
+PropprTeamBot/
+├── core/
+│   ├── bot/
+│   │   └── team_bot.py          # Main bot logic (5000+ lines)
+│   └── models/                   # Data models
+├── services/
+│   ├── alerts/                   # Alert generation
+│   ├── odds/                     # Odds fetching
+│   └── telegram/
+│       ├── handlers/
+│       │   └── preset_handlers.py  # Optimal+ Presets
+│       └── lineup_monitor.py    # Live lineup tracking
+├── config/
+│   └── constants.py             # Configuration
+└── utils/
+    └── league_mapping.py        # League normalization
+```
+
+### Key Features
+
+1. **Multi-scope Analysis**: Compare recent form vs season trends
+2. **Preset Optimization**: Auto-tuned settings from historical data  
+3. **Live Statistics**: In-game stat tracking with FotMob integration
+4. **Bet Tracking**: Automatic grading with performance analytics
+5. **Smart Batching**: Group related alerts to reduce spam
+6. **Cache Management**: Intelligent caching for database optimization
+
+<Card title="Source Code" icon="code" href="https://github.com/yourusername/PROPPR/tree/main/PropprTeamBot">
+  View the complete Team Bot implementation
+</Card>
+
+## Related Bots
+
+<CardGroup cols={2}>
+  <Card title="Player Bot" icon="user" href="/bots/player-bot">
+    Player prop markets and statistics
+  </Card>
+  <Card title="EV Bot" icon="chart-line" href="/bots/ev-bot"> 
+    Sharp odds-based value detection
+  </Card>
+</CardGroup>

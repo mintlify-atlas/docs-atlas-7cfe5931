@@ -1,0 +1,486 @@
+---
+title: 'Horse Bot'
+description: 'Value betting alerts for UK horse racing markets'
+icon: 'horse-head'
+---
+
+## Overview
+
+The **Proppr Horse Racing Bot** monitors UK horse racing odds and sends value betting alerts for WIN and PLACE markets when bookmaker odds significantly exceed fair value estimates.
+
+## Purpose
+
+Horse Bot specializes in UK horse racing, analyzing odds movements, market liquidity, and form data to identify horses trading at value prices. It uses Kelly Criterion for stake sizing and batches alerts by race to prevent overlapping positions.
+
+## Markets Covered
+
+### WIN Market
+- Horse to win the race outright
+- Sent night-before (17:00-22:00 window)
+- Limited to 8 horses per day
+
+### PLACE Market  
+- Horse to finish in the places (1st, 2nd, 3rd, or 4th depending on field size)
+- Sent day-of (anytime on race day)
+- No daily limits
+
+<Note>
+Place terms vary by field size:
+- 5-7 runners: 1st or 2nd (1/4 odds)
+- 8-15 runners: 1st, 2nd, or 3rd (1/5 odds)
+- 16+ runners: 1st, 2nd, 3rd, or 4th (1/4 odds)
+</Note>
+
+## Alert Criteria
+
+Alerts are triggered when:
+
+1. **Value Detected**: Bookmaker odds exceed estimated fair value by threshold
+2. **Within Alert Window**: 
+   - WIN: 17:00-22:00 GMT/BST for next-day races
+   - PLACE: Anytime on race day
+3. **Race Tomorrow/Today**: 
+   - WIN: Race must be tomorrow
+   - PLACE: Race must be today or tomorrow
+4. **Daily Limits**: 
+   - WIN: Max 8 horses per day (global limit)
+   - PLACE: No limits
+5. **Per-User Limits**: Max 12 alerts per user per day (configurable)
+6. **Beta Access**: User must be in beta chat (if configured)
+
+### Stake Calculation
+
+```python
+# From horse_alert_formatter.py:100-150
+def calculate_kelly_stake(fair_odds, bookmaker_odds, bankroll, kelly_fraction=0.25):
+    """
+    Calculate stake using fractional Kelly Criterion.
+    
+    Kelly Formula:
+    - p = probability of winning (1 / fair_odds)
+    - b = net odds (bookmaker_odds - 1)
+    - q = probability of losing (1 - p)
+    - Kelly% = (b*p - q) / b
+    
+    Example:
+    - Fair odds: 5.0 (20% chance)
+    - Bookmaker odds: 6.5
+    - Kelly% = ((5.5 * 0.20) - 0.80) / 5.5 = 5.45%
+    - Fractional Kelly (25%): 5.45% * 0.25 = 1.36% of bankroll
+    """
+    if not fair_odds or not bookmaker_odds or fair_odds <= 1.0 or bookmaker_odds <= 1.0:
+        return 0
+    
+    p = 1 / fair_odds  # Win probability
+    b = bookmaker_odds - 1  # Net odds
+    q = 1 - p  # Lose probability
+    
+    kelly_pct = (b * p - q) / b
+    
+    # Apply fractional Kelly (default 25% for safety)
+    fractional_kelly = kelly_pct * kelly_fraction
+    
+    # Cap at 5% of bankroll (risk management)
+    fractional_kelly = min(fractional_kelly, 0.05)
+    
+    # Minimum stake: 0.5% of bankroll
+    if fractional_kelly < 0.005:
+        return 0
+    
+    stake = bankroll * fractional_kelly
+    return round(stake, 2)
+```
+
+## User Commands
+
+<CodeGroup>
+
+```bash /start
+Initialize bot and show welcome message
+```
+
+```bash /settings
+Configure value thresholds, stake sizing, and preferences
+```
+
+```bash /stats
+View betting performance and ROI statistics
+```
+
+```bash /bankroll [amount]
+Set your bankroll for Kelly stake calculations
+```
+
+```bash /help
+Display available commands
+```
+
+</CodeGroup>
+
+<Info>
+Horse Bot has fewer commands than other bots as it focuses on automated alert delivery with minimal user configuration.
+</Info>
+
+## Configuration Options
+
+### User Settings
+
+```python
+# Horse bot user configuration
+user_settings = {
+    "alerts_enabled": True,
+    "bankroll": 1000.0,           # Bankroll for stake sizing
+    "kelly_fraction": 0.25,       # Fractional Kelly (25%)
+    "min_value_percent": 10.0,    # Minimum value % to alert
+    "max_odds": 15.0,             # Maximum odds to consider
+    "min_odds": 3.0,              # Minimum odds to consider
+    "win_market_enabled": True,   # Receive WIN alerts
+    "place_market_enabled": True  # Receive PLACE alerts
+}
+```
+
+### Global Limits
+
+```python
+# From config/constants.py:30-40
+ALERT_WINDOW_START = dtime(17, 0)    # 5:00 PM
+ALERT_WINDOW_END = dtime(22, 0)      # 10:00 PM
+ALERT_TIMEZONE = "Europe/London"     # GMT/BST
+
+MAX_WIN_HORSES_PER_DAY = 8           # Global WIN limit
+MAX_ALERTS_PER_USER_PER_DAY = 12     # Per-user limit
+TARGET_ALERTS_PER_USER_PER_DAY = 8   # Target (soft limit)
+
+ALERT_COOLDOWN = 300                  # 5 minutes between duplicate alerts
+```
+
+## Real Code Examples
+
+### Alert Batching System
+
+```python
+# From horse_bot.py:305-481
+class HorseRacingAlertSystem:
+    """
+    Batches alerts by race to adjust stakes for multiple horses.
+    """
+    
+    def __init__(self, database, bot):
+        self.db = database
+        self.bot = bot
+        self.pending_alerts = {}  # race_key -> [arb_data]
+        self.batch_timers = {}    # race_key -> Timer
+        self.batch_window_seconds = 1  # 1 second batching
+    
+    def _get_race_key(self, arb_data: dict) -> str:
+        """Generate unique key: location_YYYY-MM-DD_HH:MM"""
+        location = arb_data.get("location", "unknown")
+        race_time = arb_data.get("race_time", "")
+        
+        try:
+            race_dt = datetime.fromisoformat(race_time.replace("Z", "+00:00"))
+            return f"{location}_{race_dt.strftime('%Y-%m-%d_%H:%M')}"
+        except:
+            return f"{location}_{race_time}"
+    
+    def send_alert_for_new_arb(self, arb_data: dict):
+        """Queue alert for batching"""
+        race_key = self._get_race_key(arb_data)
+        
+        # Add to pending queue
+        if race_key not in self.pending_alerts:
+            self.pending_alerts[race_key] = []
+        self.pending_alerts[race_key].append(arb_data)
+        
+        # Start batch timer if first alert
+        if race_key not in self.batch_timers:
+            timer = threading.Timer(
+                self.batch_window_seconds,
+                lambda: self._process_batched_race(race_key)
+            )
+            timer.start()
+            self.batch_timers[race_key] = timer
+    
+    def _process_batched_race(self, race_key: str):
+        """Process all queued alerts for a race"""
+        arb_list = self.pending_alerts.pop(race_key, [])
+        if not arb_list:
+            return
+        
+        logger.info(f"🏁 Processing batched race: {race_key} ({len(arb_list)} horses)")
+        
+        # Get all active users
+        users = self.db.get_all_active_users()
+        
+        for user_id in users:
+            user_settings = self.db.get_user_settings(user_id)
+            
+            # Filter by user preferences
+            filtered = [
+                arb for arb in arb_list
+                if HorseRacingFilter.should_send_alert(arb, user_settings)
+            ]
+            
+            if not filtered:
+                continue
+            
+            # Adjust stakes for multiple horses in same race
+            adjusted = self._adjust_stakes_for_multiple_horses(
+                filtered, user_settings
+            )
+            
+            # Send each alert
+            for arb in adjusted:
+                self.send_alert_to_user(user_id, arb)
+```
+
+### Multi-Horse Stake Adjustment
+
+```python
+# From horse_bot.py:161-196
+def _adjust_stakes_for_multiple_horses(self, arb_list: list, user_settings: dict) -> list:
+    """
+    Adjust stakes when multiple horses are in the same race.
+    Only one horse can win, so reduce stakes proportionally.
+    
+    Strategy:
+    - If 2+ horses: divide each stake by number of horses
+    - Keeps total exposure reasonable
+    - Ensures profit if one wins
+    
+    Example:
+    - 3 horses in race, each with 2pt Kelly stake
+    - Adjusted: each gets 2pt / 3 = 0.67pt stake
+    - Total risk: 2pt instead of 6pt
+    """
+    if len(arb_list) <= 1:
+        for arb in arb_list:
+            arb['adjusted_stake_multiplier'] = 1.0
+        return arb_list
+    
+    num_horses = len(arb_list)
+    adjustment_factor = 1.0 / num_horses
+    
+    logger.info(f"🔄 Adjusting stakes for {num_horses} horses in same race")
+    
+    for arb in arb_list:
+        arb['adjusted_stake_multiplier'] = adjustment_factor
+        logger.info(
+            f"  → {arb.get('horse_name', 'Unknown')}: "
+            f"stake multiplier = {adjustment_factor:.2f}x"
+        )
+    
+    return arb_list
+```
+
+### Alert Filtering
+
+```python
+# From filters/filters.py:50-150
+class HorseRacingFilter:
+    """
+    Filter horse racing alerts by user preferences.
+    """
+    
+    @staticmethod
+    def should_send_alert(arb_data: dict, user_settings: dict) -> bool:
+        """
+        Check if alert meets user's criteria.
+        
+        Filters:
+        - Odds range (min/max)
+        - Value percentage threshold
+        - Market type (WIN vs PLACE)
+        - Stake amount (minimum)
+        """
+        # Check market type enabled
+        market_type = arb_data.get('market_type', 'WIN')
+        if market_type == 'WIN' and not user_settings.get('win_market_enabled', True):
+            return False
+        if market_type == 'PLACE' and not user_settings.get('place_market_enabled', True):
+            return False
+        
+        # Check odds range
+        odds = arb_data.get('bookmaker_odds')
+        min_odds = user_settings.get('min_odds', 3.0)
+        max_odds = user_settings.get('max_odds', 15.0)
+        
+        if odds < min_odds or odds > max_odds:
+            return False
+        
+        # Check value percentage
+        value_pct = arb_data.get('value_percent', 0)
+        min_value = user_settings.get('min_value_percent', 10.0)
+        
+        if value_pct < min_value:
+            return False
+        
+        # Check minimum stake (if stake calculated)
+        if 'recommended_stake' in arb_data:
+            min_stake = user_settings.get('min_stake', 5.0)
+            if arb_data['recommended_stake'] < min_stake:
+                return False
+        
+        return True
+```
+
+### Alert Formatting
+
+```python
+# From horse_alert_formatter.py:50-120
+class HorseAlertFormatter:
+    """
+    Format horse racing alerts for Telegram.
+    """
+    
+    @staticmethod
+    def format_alert(arb_data: dict, user_settings: dict):
+        """
+        Format horse racing alert with stake recommendation.
+        
+        Returns:
+        - alert_text: Formatted message
+        - reply_markup: Inline keyboard
+        - stake_data: Stake calculation details
+        """
+        horse_name = arb_data.get('horse_name', 'Unknown')
+        location = arb_data.get('location', 'Unknown')
+        race_time = arb_data.get('race_time', '')
+        market_type = arb_data.get('market_type', 'WIN')
+        bookmaker_odds = arb_data.get('bookmaker_odds')
+        fair_odds = arb_data.get('fair_odds')
+        value_pct = arb_data.get('value_percent', 0)
+        
+        # Format race time
+        try:
+            race_dt = datetime.fromisoformat(race_time.replace('Z', '+00:00'))
+            time_str = race_dt.strftime('%H:%M')
+            date_str = race_dt.strftime('%a %d %b')
+        except:
+            time_str = 'Unknown'
+            date_str = 'Unknown'
+        
+        # Calculate stake
+        bankroll = user_settings.get('bankroll', 1000.0)
+        kelly_fraction = user_settings.get('kelly_fraction', 0.25)
+        
+        stake = calculate_kelly_stake(
+            fair_odds, bookmaker_odds, bankroll, kelly_fraction
+        )
+        
+        # Apply adjustment if multiple horses
+        adjustment = arb_data.get('adjusted_stake_multiplier', 1.0)
+        adjusted_stake = stake * adjustment
+        
+        # Build message
+        message = f"🐎 **{market_type} VALUE BET**\n\n"
+        message += f"🏇 **{horse_name}**\n"
+        message += f"📍 {location} - {time_str}\n"
+        message += f"📅 {date_str}\n\n"
+        
+        message += f"📊 **Odds:** {bookmaker_odds:.2f}\n"
+        message += f"⚖️ **Fair Value:** {fair_odds:.2f}\n"
+        message += f"📈 **Value:** {value_pct:.1f}%\n\n"
+        
+        message += f"💰 **Recommended Stake:**\n"
+        
+        if adjustment < 1.0:
+            message += f"   Base: £{stake:.2f}\n"
+            message += f"   Adjusted (×{adjustment:.2f}): £{adjusted_stake:.2f}\n"
+            message += f"   _(Multiple horses in race)_\n"
+        else:
+            message += f"   £{adjusted_stake:.2f}\n"
+        
+        potential_profit = adjusted_stake * (bookmaker_odds - 1)
+        message += f"   Potential Profit: £{potential_profit:.2f}\n"
+        
+        # Add bookmaker link button
+        keyboard = [
+            [InlineKeyboardButton(
+                f"🔗 Bet on {arb_data.get('bookmaker', 'Bookmaker')}",
+                url=arb_data.get('bookmaker_link', '#')
+            )]
+        ]
+        
+        stake_data = {
+            'base_stake': stake,
+            'adjusted_stake': adjusted_stake,
+            'adjustment_factor': adjustment,
+            'bankroll': bankroll,
+            'kelly_fraction': kelly_fraction
+        }
+        
+        return message, InlineKeyboardMarkup(keyboard), stake_data
+```
+
+## Database Collections
+
+- **`horse_arbs`**: Current horse racing value opportunities
+- **`sent_horse_alerts`**: Alert deduplication with horse/race tracking
+- **`horse_user_settings`**: User configurations
+- **`horse_results`**: Race results for performance tracking
+
+## Technical Architecture
+
+```
+PropprHorseBot/
+├── core/
+│   ├── bot/
+│   │   └── horse_bot.py           # Main bot logic
+│   ├── filters/
+│   │   ├── filters.py             # Value filtering
+│   │   └── race_filters.py        # Race-level filters
+│   ├── horse_alert_formatter.py  # Alert formatting
+│   ├── kelly_stake_calculator.py # Kelly Criterion
+│   └── pipeline/
+│       ├── eod_pipeline.py        # End-of-day reporting
+│       └── eod_summary.py         # Daily summaries
+├── services/
+│   ├── database/
+│   │   └── connection.py          # MongoDB wrapper
+│   └── telegram/
+│       └── commands/
+│           └── bot_commands.py      # Command handlers
+└── config/
+    └── constants.py                # Configuration
+```
+
+## Beta Access
+
+```python
+# From horse_bot.py:198-216
+def _is_user_in_beta_chat(self, user_id: int) -> bool:
+    """
+    Check if user is member of beta chat.
+    Required for access during beta period.
+    """
+    if BETA_CHAT_ID is None:
+        return True  # No restriction if no beta chat configured
+    
+    try:
+        member = self.bot.get_chat_member(BETA_CHAT_ID, user_id)
+        is_member = member.status in ['member', 'administrator', 'creator']
+        
+        if not is_member:
+            logger.info(f"User {user_id} not in beta chat (status: {member.status})")
+        
+        return is_member
+    except TelegramError as e:
+        logger.warning(f"Error checking beta chat for user {user_id}: {e}")
+        return False  # Fail closed
+```
+
+<Card title="Source Code" icon="code" href="https://github.com/yourusername/PROPPR/tree/main/PropprHorseBot">
+  View the complete Horse Bot implementation
+</Card>
+
+## Related Bots
+
+<CardGroup cols={2}>
+  <Card title="EV Bot" icon="chart-line" href="/bots/ev-bot">
+    Sharp odds-based value detection
+  </Card>
+  <Card title="Arb Bot" icon="arrows-split-up-and-left" href="/bots/arb-bot">
+    Arbitrage betting opportunities
+  </Card>
+</CardGroup>

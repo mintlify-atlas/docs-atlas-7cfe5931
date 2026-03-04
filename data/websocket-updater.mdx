@@ -1,0 +1,403 @@
+---
+title: 'WebSocket Updater'
+description: 'Real-time odds updates via WebSocket connection to Odds API'
+icon: 'globe'
+---
+
+## Overview
+
+The WebSocket Updater (`OnWebsocketUpdater`) is PROPPR's real-time data pipeline that maintains a persistent WebSocket connection to the Odds API and updates MongoDB collections with live odds changes.
+
+<Info>
+The service handles updates for **all bots** (Team, Arb, EV, Player, Overtime) from a single WebSocket connection, as Odds API allows only ONE connection per API key.
+</Info>
+
+## Architecture
+
+### Core Components
+
+```
+UnifiedWebSocketService
+  ├── WebSocket Connection Management
+  ├── Multi-sport Rotation
+  ├── Duplicate Update Filtering
+  └── Bot-specific Callbacks
+        ├── Team Bot Callback
+        ├── Arb Bot Callback
+        ├── EV Bot Callback
+        ├── Player Bot Callback
+        └── Overtime Bot Callback
+```
+
+**Source:** `/WebsocketUpdater/services/websocket_service.py`
+
+### Collections Updated
+
+| Collection | Purpose | Bot |
+|------------|---------|-----|
+| `team_odds` | Team market odds | Team Bot |
+| `player_odds` | Player market odds | Player Bot |
+| `arbitrage_bets` | Arbitrage opportunities | Arb Bot |
+| `all_value_bets` | EV betting opportunities | EV Bot |
+| `overtime_odds` | Overtime market odds | Overtime Bot |
+| `live_inplay_odds` | Live in-play odds | Live Bot |
+
+## Key Features
+
+### 1. Real-Time Updates
+
+<CodeGroup>
+```python WebSocket Message Processing
+def _process_odds_update(self, data: Dict):
+    """
+    Process odds update from WebSocket.
+    Distributes update to relevant bot callbacks.
+    """
+    event_id = data.get('id')
+    bookmaker = data.get('bookie')
+    markets = data.get('markets', [])
+    
+    # Filter deprecated V2 IDs
+    if str(event_id).startswith('1') and len(str(event_id)) == 10:
+        return
+    
+    # Distribute to all bot callbacks
+    for callback in self.team_bot_callbacks:
+        callback(event_id, bookmaker, normalized_data)
+```
+</CodeGroup>
+
+**Key Implementation Details:**
+- Filters deprecated V2 IDs (10-digit IDs starting with '1')
+- Adds `source: 'websocket'` label to all documents
+- Caches sharp odds (M88/FB Sports) for EV calculations
+- Tracks bookmaker accumulation for arbitrage detection
+
+### 2. Sport Rotation
+
+<Note>
+The WebSocket API requires a `sport` parameter. The service rotates through all major sports every 30 seconds to ensure comprehensive coverage.
+</Note>
+
+```python Sport Configuration
+sports = [
+    'football', 'basketball', 'tennis', 'ice-hockey', 'baseball',
+    'american-football', 'rugby-league', 'cricket', 'golf',
+    'boxing', 'mma', 'motorsports', 'esports'
+]
+rotation_interval = 30  # seconds
+```
+
+### 3. Automatic Reconnection
+
+<CodeGroup>
+```python Reconnection Logic
+def _connect_loop(self):
+    """Main connection loop with exponential backoff"""
+    while self.running:
+        try:
+            self._connect()
+            self.reconnect_attempts = 0
+        except Exception as e:
+            self.reconnect_attempts += 1
+            
+            if self.reconnect_attempts >= self.max_reconnect_attempts:
+                self.running = False
+                break
+            
+            # Exponential backoff (max 300s)
+            wait_time = min(2 ** self.reconnect_attempts, 300)
+            time.sleep(wait_time)
+```
+</CodeGroup>
+
+### 4. Duplicate Filtering
+
+<Warning>
+WebSocket can send duplicate updates within seconds. The service maintains a 5-second cache to prevent duplicate processing.
+</Warning>
+
+```python Duplicate Cache
+processed_updates: Dict[str, float] = {}  # event_id -> timestamp
+duplicate_cache_ttl = 5  # seconds
+
+update_key = f"{event_id}:{bookmaker}:{data.get('type')}"
+if update_key in self.processed_updates:
+    last_processed = self.processed_updates[update_key]
+    if current_time - last_processed < self.duplicate_cache_ttl:
+        return  # Skip duplicate
+```
+
+## Bot Callbacks
+
+### Team Bot Callback
+
+<Accordion title="Team Market Processing">
+```python
+def team_bot_callback(event_id, bookmaker, data):
+    """
+    Creates/updates team_odds documents.
+    Filters to team markets only (ML, Totals, Spread, Corners, etc.)
+    """
+    markets = data.get('markets', [])
+    team_markets = _filter_team_markets(markets)
+    
+    if not team_markets:
+        return
+    
+    # Update or create document
+    team_odds_collection.update_one(
+        {'id': event_id},
+        {'$set': {
+            f'bookmakers.{bookmaker}': team_markets,
+            'last_updated': datetime.now(),
+            'source': 'websocket'
+        }},
+        upsert=True
+    )
+```
+
+**Filtered Markets:** ML, Totals, Spread, Corners, Shots, Cards, BTTS
+</Accordion>
+
+### Arbitrage Bot Callback
+
+<Accordion title="Arbitrage Detection">
+```python
+def arb_bot_callback(event_id, bookmaker, data):
+    """
+    Accumulates odds from multiple bookmakers.
+    Schedules delayed arbitrage check (10s) to allow
+    multiple bookmakers to arrive.
+    """
+    # Cache odds by bookmaker
+    arb_odds_cache[event_id][bookmaker] = data
+    
+    # Schedule delayed check
+    check_time = time.time() + 10
+    arb_pending_checks[event_id] = check_time
+```
+
+**Why Delayed?** WebSocket sends updates ONE BOOKMAKER AT A TIME. Immediate checks would miss arbitrages requiring 2+ bookmakers.
+</Accordion>
+
+### EV Bot Callback
+
+<Accordion title="Value Bet Updates">
+```python
+def ev_bot_callback(event_id, bookmaker, data):
+    """
+    Updates odds_history for existing value bets.
+    Creates new value bets when sharp odds shift.
+    """
+    # Find all value bets for this event
+    value_bets = all_value_bets_collection.find({
+        'event_id': event_id
+    })
+    
+    for bet in value_bets:
+        # Update odds history
+        all_value_bets_collection.update_one(
+            {'_id': bet['_id']},
+            {'$push': {
+                'odds_history': {
+                    'timestamp': datetime.now(),
+                    'bookmaker_odds': extract_odds(data),
+                    'source': 'websocket'
+                }
+            }}
+        )
+```
+</Accordion>
+
+## Rate Limiting
+
+<CardGroup cols={2}>
+  <Card title="Global Tracker" icon="gauge">
+    Uses `SharedServices.tracking.global_request_tracker` to coordinate with API Poller
+  </Card>
+  <Card title="API Quota" icon="clock">
+    5000 requests/hour shared across all services
+  </Card>
+</CardGroup>
+
+```python Rate Limit Check
+if RATE_TRACKER_AVAILABLE and global_request_tracker:
+    if not global_request_tracker.can_make_request():
+        logger.warning("Rate limit reached")
+        return
+    global_request_tracker.record_request()
+```
+
+## Running the Service
+
+### Manual Start
+
+```bash
+python /opt/PROPPR/WebsocketUpdater/runners/run_websocket_updater.py
+```
+
+### Systemd Service
+
+<CodeGroup>
+```ini proppr-websocket-updater.service
+[Unit]
+Description=PROPPR WebSocket Updater
+After=network.target mongod.service
+
+[Service]
+Type=simple
+User=proppr
+WorkingDirectory=/opt/PROPPR
+ExecStart=/usr/bin/python3 /opt/PROPPR/WebsocketUpdater/runners/run_websocket_updater.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+</CodeGroup>
+
+```bash Service Commands
+sudo systemctl start proppr-websocket-updater
+sudo systemctl enable proppr-websocket-updater
+sudo systemctl status proppr-websocket-updater
+```
+
+## Health Monitoring
+
+### Statistics Tracking
+
+```python
+stats = {
+    'messages_received': 0,
+    'updates_processed': 0,
+    'team_bot_alerts': 0,
+    'arb_bot_alerts': 0,
+    'ev_bot_alerts': 0,
+    'player_bot_alerts': 0,
+    'overtime_bot_alerts': 0,
+    'errors': 0,
+    'reconnections': 0
+}
+```
+
+### Health Check
+
+<CodeGroup>
+```python Health Status
+def is_healthy(self) -> bool:
+    """Check if WebSocket is healthy"""
+    if not self.running or not self.connected:
+        return False
+    
+    # Check if messages received recently
+    if self.last_message_time:
+        time_since_last = (datetime.now() - self.last_message_time).total_seconds()
+        if time_since_last > 60:
+            return False
+    
+    return True
+```
+</CodeGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No messages received">
+    **Symptoms:** `last_message_time` is stale (>60 seconds)
+    
+    **Solutions:**
+    - Check WebSocket connection status
+    - Verify API key is valid
+    - Check network connectivity
+    - Review reconnection logs
+  </Accordion>
+  
+  <Accordion title="Duplicate documents created">
+    **Cause:** V2 IDs (deprecated) not filtered
+    
+    **Solution:** Verify V2 ID filter is active:
+    ```python
+    if str(event_id).startswith('1') and len(str(event_id)) == 10:
+        return  # Skip V2 IDs
+    ```
+  </Accordion>
+  
+  <Accordion title="Missing arbitrage opportunities">
+    **Cause:** Delayed check not running
+    
+    **Solution:** Check `arb_processor_thread` is running:
+    ```python
+    arb_processor_thread = threading.Thread(
+        target=self._process_delayed_arb_checks,
+        daemon=True
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Configuration
+
+### Environment Variables
+
+```bash
+# MongoDB
+MONGO_CONNECTION_STRING="mongodb://localhost:27017"
+MONGO_DATABASE="proppr"
+
+# Odds API
+ODDS_API_KEY="your_api_key_here"
+
+# WebSocket
+WS_ROTATION_INTERVAL=30  # seconds
+WS_MAX_RECONNECT_ATTEMPTS=5
+```
+
+### Market Filters
+
+<Tabs>
+  <Tab title="Team Markets">
+    ```python
+    TEAM_MARKET_NAMES = {
+        'ML', 'Totals', 'Spread', 'BTTS',
+        'Corners Totals', 'Total Cards',
+        'Team Shots Home', 'Team Shots Away',
+        'Goalkeeper Saves Home', 'Goalkeeper Saves Away'
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Player Markets">
+    ```python
+    PLAYER_MARKET_NAMES = {
+        'Player Shots', 'Player Shots on Target',
+        'Player Goals', 'Player Assists',
+        'Player Tackles', 'Player Passes'
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Performance Metrics
+
+| Metric | Value |
+|--------|-------|
+| **Message Processing** | &lt;100ms per update |
+| **Callback Latency** | &lt;50ms per callback |
+| **Cache Cleanup** | Every 5 minutes |
+| **Reconnection Time** | &lt;10s (with backoff) |
+
+## Related Documentation
+
+<CardGroup cols={3}>
+  <Card title="API Poller" icon="clock" href="/data/api-poller">
+    Polling-based odds updates
+  </Card>
+  <Card title="Team Bot" icon="users" href="/bots/team-bot">
+    Team market alerts
+  </Card>
+  <Card title="EV Bot" icon="chart-line" href="/bots/ev-bot">
+    Expected value betting
+  </Card>
+</CardGroup>

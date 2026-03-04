@@ -1,0 +1,575 @@
+---
+title: 'Presets'
+description: 'Optimal+ presets and market configuration system'
+icon: 'sliders'
+---
+
+## Overview
+
+The Optimal+ presets system provides data-driven market configurations that optimize for different volume/ROI tradeoffs. Presets are generated automatically based on historical performance data and updated regularly.
+
+<Info>
+Presets are stored in the `SharedServices/config/presets/` directory and can be customized per bot (player, team, overtime).
+</Info>
+
+## Preset Philosophy
+
+Each preset represents a different betting strategy:
+
+<CardGroup cols={2}>
+  <Card title="Route One 🎯" icon="bullseye">
+    **Low volume, high ROI**
+    
+    Conservative approach focusing on highest value opportunities with tight filters. Targets 20% ROI with 50-75 bets/week.
+  </Card>
+  
+  <Card title="Shoot On Sight ⚡" icon="bolt">
+    **Medium volume, balanced ROI**
+    
+    Selective markets with proven performance. Targets 15% ROI with 100-200 bets/week.
+  </Card>
+  
+  <Card title="Gegenpress 🔥" icon="fire">
+    **High volume, positive ROI**
+    
+    Aggressive market coverage maintaining profitability. Targets 10% ROI with 250-350 bets/week.
+  </Card>
+  
+  <Card title="Tiki-Taka ⚽" icon="futbol">
+    **Maximum volume, stable ROI**
+    
+    Maximum market coverage with intricate filters. Targets 7% ROI with 450+ bets/week.
+  </Card>
+</CardGroup>
+
+## Preset Definitions
+
+### Route One Configuration
+
+```python SharedServices/config/presets/preset_config.py
+PRESET_DEFINITIONS = {
+    "Route One": {
+        "description": "Low volume, high ROI strategy",
+        "target_volume_range": (0, 75),
+        "target_overall_roi": 20.0,
+        "min_roi_threshold": 3.0,
+        "max_roi_threshold": 50.0,
+        "max_variance": 0.99,
+        "min_sample_size": 0,
+        "min_market_count": 4,
+        "max_market_count": 6,
+        "priority": "roi",
+        "emoji": "🎯",
+        "min_odds": 1.5,
+        "max_odds": 4.0,
+    }
+}
+```
+
+### Shoot On Sight Configuration
+
+```python
+"Shoot On Sight": {
+    "description": "Low-medium volume, balanced ROI strategy",
+    "target_volume_range": (75, 125),
+    "target_overall_roi": 15.0,
+    "min_roi_threshold": 1.0,
+    "max_roi_threshold": 45.0,
+    "max_variance": 0.99,
+    "min_sample_size": 1,
+    "min_market_count": 4,
+    "max_market_count": 7,
+    "priority": "roi",
+    "emoji": "⚡",
+    "min_odds": 1.7,
+    "max_odds": None,
+}
+```
+
+### Gegenpress Configuration
+
+```python
+"Gegenpress": {
+    "description": "Medium-high volume, positive ROI",
+    "target_volume_range": (125, 175),
+    "target_overall_roi": 10.0,
+    "min_roi_threshold": 1.0,
+    "max_roi_threshold": 40.0,
+    "max_variance": 0.99,
+    "min_sample_size": 1,
+    "min_market_count": 5,
+    "max_market_count": 9,
+    "prefer_more_markets": True,
+    "priority": "balanced",
+    "emoji": "🔥",
+    "min_odds": 1.7,
+    "max_odds": None,
+}
+```
+
+### Tiki-Taka Configuration
+
+```python
+"Tiki-Taka": {
+    "description": "High volume, positive ROI",
+    "target_volume_range": (175, 250),
+    "target_overall_roi": 7.0,
+    "min_roi_threshold": 1.0,
+    "max_roi_threshold": 35.0,
+    "max_variance": 0.99,
+    "min_sample_size": 1,
+    "min_market_count": 6,
+    "prefer_more_markets": True,
+    "priority": "balanced",
+    "emoji": "⚽",
+    "min_odds": 1.7,
+    "max_odds": None,
+}
+```
+
+## Market Settings
+
+Each preset defines specific market settings optimized through historical analysis:
+
+### Player Preset Example
+
+```python SharedServices/config/presets/presets_config.py
+OPTIMAL_PLAYER_PRESETS = {
+    "Route One": {
+        "emoji": "🎯",
+        "scope": "last5",
+        "market_settings": {
+            "Player Tackles": {
+                "enabled": True,
+                "min_odds": 1.5,
+                "max_odds": 6,
+                "min_ev_pct": 10,
+                "min_chance_pct": 20,
+                "min_line": 1.5,
+                "max_line": 5.5
+            },
+            "Player Goals": {
+                "enabled": True,
+                "min_odds": 2,
+                "max_odds": 6,
+                "min_ev_pct": 60,
+                "min_chance_pct": 30,
+                "min_line": 0.5,
+                "max_line": 3.5
+            },
+            "Player Shots Total": {
+                "enabled": True,
+                "min_odds": 2,
+                "max_odds": None,
+                "min_ev_pct": 2,
+                "min_chance_pct": 30,
+                "min_line": 1.5,
+                "max_line": 2.5
+            }
+        }
+    }
+}
+```
+
+### Market Setting Parameters
+
+<ParamField path="enabled" type="boolean" required>
+  Whether this market is active in the preset
+</ParamField>
+
+<ParamField path="min_odds" type="float" required>
+  Minimum acceptable odds (e.g., 1.5 = 3/2 odds)
+</ParamField>
+
+<ParamField path="max_odds" type="float | null">
+  Maximum acceptable odds (null = no limit)
+</ParamField>
+
+<ParamField path="min_ev_pct" type="float" required>
+  Minimum expected value percentage (edge over bookmaker)
+</ParamField>
+
+<ParamField path="min_chance_pct" type="float" required>
+  Minimum win probability percentage
+</ParamField>
+
+<ParamField path="min_line" type="float" required>
+  Minimum market line (e.g., 0.5 for "Player Goals 0.5+")
+</ParamField>
+
+<ParamField path="max_line" type="float" required>
+  Maximum market line (e.g., 3.5 for "Player Goals 3.5+")
+</ParamField>
+
+## Optimization Parameters
+
+### Parameter Ranges
+
+The optimizer tests different combinations of these parameters:
+
+```python SharedServices/config/presets/preset_config.py
+OPTIMIZATION_RANGES = {
+    "min_odds": {
+        "values": [1.5, 1.7, 2.0],
+    },
+    "max_odds": {
+        "values": [6.0, 12.0, None],
+    },
+    "min_ev_pct": {
+        "values": [2, 5, 10, 20, 40, 60],
+    },
+    "min_chance_pct": {
+        "values": [5, 20, 30, 50, 70],
+    },
+    "scope": {
+        "values": ["last5", "last10"],
+    },
+}
+```
+
+### Market-Specific Line Ranges
+
+```python
+# Player Goals: 0.5-3.5
+"player_goals_min_line": {
+    "values": [0.5, 1.5, 2.5, 3.5],
+},
+"player_goals_max_line": {
+    "values": [0.5, 1.5, 2.5, 3.5],
+},
+
+# Player Shots On Target: 0.5-5.5
+"player_shots_on_target_min_line": {
+    "values": [0.5, 1.5, 2.5, 3.5, 4.5, 5.5],
+},
+
+# Player Passes: 14.5-77.5
+"player_passes_min_line": {
+    "values": [14.5, 19.5, 24.5, 29.5, 34.5, 39.5, 44.5],
+},
+"player_passes_max_line": {
+    "values": [24.5, 34.5, 44.5, 54.5, 64.5, 74.5, 77.5],
+},
+```
+
+## Available Markets
+
+### Player Bot Markets
+
+```python SharedServices/config/presets/preset_config.py
+PLAYER_MARKETS = [
+    "Player Goals",
+    "Player Score 2+ Goals",
+    "Player Score 3+ Goals",
+    "To Score First",
+    "To Be Booked First",
+    "Player Assists",
+    "Player Score or Assist",
+    "Player Goal From Header",
+    "Player Goal From Outside Box",
+    "Player Shots On Target",
+    "Player Headed Shots On Target",
+    "Player SOT Outside Box",
+    "Player Shots Total",
+    "Player Tackles",
+    "Player Passes",
+    "Player Offsides",
+    "Goalkeeper Saves",
+    "Player Fouls Committed",
+    "Player Fouls Won",
+]
+```
+
+### Team Bot Markets
+
+```python
+TEAM_MARKETS = [
+    # Goals
+    "Total Goals",
+    "Team Total Goals",
+    
+    # Corners
+    "Total Corners",
+    "Team Corners",
+    "Corner Handicap",
+    "Corners Spread",
+    
+    # Cards
+    "Total Cards",
+    "Team Cards",
+    "Card Handicap",
+    "Bookings Spread",
+    
+    # Shots
+    "Total Shots",
+    "Team Shots",
+    "Total Shots On Target",
+    "Team Shots On Target",
+    
+    # Fouls & Tackles
+    "Total Fouls",
+    "Team Fouls",
+    "Total Tackles",
+    "Team Tackles",
+    
+    # Offsides
+    "Total Offsides",
+    "Team Offsides",
+]
+```
+
+## Overtime-Specific Presets
+
+Overtime presets are optimized for the Overtime Markets platform:
+
+```python SharedServices/config/presets/preset_config.py
+OVERTIME_PRESET_DEFINITIONS = {
+    "Route One (Overtime)": {
+        "base_preset": "Route One",
+        "target_volume_range": (0, 50),      # ~65% of standard
+        "min_market_count": 3,
+        "max_market_count": 5,
+    },
+    "Shoot On Sight (Overtime)": {
+        "base_preset": "Shoot On Sight",
+        "target_volume_range": (50, 85),
+        "min_market_count": 3,
+        "max_market_count": 5,
+    },
+}
+```
+
+### Overtime Markets
+
+```python
+OVERTIME_PLAYER_MARKETS = [
+    "Player Goals",
+    "Player Assists",
+    "Player Shots On Target",
+    "Player Tackles",
+    "Goalkeeper Saves",
+    "Player Fouls Committed",
+    "Player Fouls Won",
+]
+
+OVERTIME_TEAM_MARKETS = [
+    "Total Goals",
+    "Team Total Goals",
+    "Total Corners",
+    "Team Corners",
+    "Corner Handicap",
+    "Total Cards",
+    "Team Cards",
+    "Card Handicap",
+    "Total Shots",
+    "Team Shots",
+    "Total Shots On Target",
+    "Team Shots On Target",
+    "Total Offsides",
+]
+```
+
+<Warning>
+Overtime presets have reduced volume targets (~65% of standard) due to fewer available markets.
+</Warning>
+
+## Preset Generation
+
+### Configuration
+
+```python SharedServices/config/presets/preset_config.py
+PRESET_COLLECTION_NAME = "optimal_presets"
+PRESET_EXPIRY_HOURS = 72  # Presets valid for 72 hours
+PRESET_GENERATION_INTERVAL_HOURS = 24  # Generate daily
+PRESET_NOTIFICATION_INTERVAL_HOURS = 48  # Notify every 48h
+PRESET_LOOKBACK_DAYS = 14  # Use last 14 days of data
+```
+
+### Data Quality Requirements
+
+```python
+DATA_QUALITY = {
+    "min_days_of_data": 7,
+    "min_bets_per_market": 1,
+    "min_bets_per_config": 1,
+    "min_bets_high_roi": 1,
+}
+```
+
+### Variance Control
+
+```python
+VARIANCE_SETTINGS = {
+    "max_std_dev_ratio": 0.40,  # Std dev can't exceed 40% of mean ROI
+    "min_win_rate": 0.30,        # Minimum 30% win rate
+    "outlier_threshold": 3.0,    # Standard deviations for outliers
+}
+```
+
+## Hard Limits
+
+### Minimum Setting Values
+
+```python SharedServices/config/presets/preset_config.py
+MINIMUM_SETTING_VALUES = {
+    "min_odds": 1.3,
+    "min_ev_pct": 2,
+    "min_chance_pct": 5,
+    "min_line": 0.5,
+    "min_avg_minutes": 45,
+}
+```
+
+### Market Hard Limits
+
+```python
+MARKET_HARD_LIMITS = {
+    "Player Shots Total": {
+        "max_line": 2.5,  # Too high variance above 2.5
+    },
+    "Player Shots On Target": {
+        "max_line": 2.5,
+    },
+    "Player Headed Shots On Target": {
+        "max_line": 2.5,
+    },
+    "Player SOT Outside Box": {
+        "max_line": 2.5,
+    },
+}
+```
+
+<Tip>
+Hard limits prevent the optimizer from generating irresponsible high-variance configurations.
+</Tip>
+
+## Using Presets
+
+### Get Preset Order
+
+```python
+from SharedServices.config.presets.preset_config import get_preset_order
+
+presets = get_preset_order()
+# Returns: ["Route One", "Shoot On Sight", "Gegenpress", "Tiki-Taka"]
+```
+
+### Get Preset Configuration
+
+```python
+from SharedServices.config.presets.preset_config import get_preset_config
+
+config = get_preset_config("Route One")
+print(config['target_overall_roi'])  # 20.0
+print(config['emoji'])  # 🎯
+```
+
+### Get Markets for Bot Type
+
+```python
+from SharedServices.config.presets.preset_config import get_markets_for_bot
+
+player_markets = get_markets_for_bot('player')
+team_markets = get_markets_for_bot('team')
+```
+
+### Calculate Variance Penalty
+
+```python
+from SharedServices.config.presets.preset_config import calculate_variance_penalty
+
+penalty = calculate_variance_penalty(
+    roi=15.0,
+    std_dev=3.5,
+    sample_size=100
+)
+# Lower penalty = better stability
+```
+
+## Notification Template
+
+```python SharedServices/config/presets/preset_config.py
+NOTIFICATION_TEMPLATE = """
+🧠👨‍🏫 **NEW OPTIMAL+ PRESETS AVAILABLE!**
+
+Updated presets based on the last 14 days of results.
+
+📊 Quick Stats:
+{preset_stats}
+
+View and apply: /settings → 🧠👨‍🏫 Optimal+ Presets
+
+💡 Each preset offers a different volume/ROI tradeoff:
+• {route_one_emoji} Route One: Lowest volume, highest ROI (50-75 bets/week)
+• {shoot_emoji} Shoot On Sight: Low-medium volume, balanced ROI (100-200 bets/week)
+• {gegen_emoji} Gegenpress: Medium-high volume, positive ROI (250-350 bets/week)
+• {tiki_emoji} Tiki-Taka: High volume, positive ROI (450+ bets/week)
+
+[Don't want these notifications? Toggle in /settings]
+"""
+```
+
+## Database Schema
+
+Presets are stored in MongoDB:
+
+```json
+{
+  "preset_name": "Route One",
+  "bot_type": "player",
+  "generated_at": "2026-03-04T10:00:00Z",
+  "expires_at": "2026-03-07T10:00:00Z",
+  "lookback_days": 14,
+  "scope": "last5",
+  "emoji": "🎯",
+  "market_settings": {
+    "Player Tackles": {
+      "enabled": true,
+      "min_odds": 1.5,
+      "max_odds": 6,
+      "min_ev_pct": 10,
+      "min_chance_pct": 20,
+      "min_line": 1.5,
+      "max_line": 5.5
+    }
+  },
+  "performance": {
+    "roi": 18.5,
+    "volume": 65,
+    "win_rate": 0.42,
+    "variance": 0.25
+  }
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Regular Updates" icon="rotate">
+    Presets should be regenerated daily to adapt to changing market conditions.
+  </Card>
+  
+  <Card title="Validate Data Quality" icon="magnifying-glass-chart">
+    Ensure sufficient historical data before generating presets (minimum 7 days).
+  </Card>
+  
+  <Card title="Monitor Performance" icon="chart-line">
+    Track preset performance and adjust optimization parameters if needed.
+  </Card>
+  
+  <Card title="Test Before Deploy" icon="flask">
+    Always test new preset configurations in development before production.
+  </Card>
+</CardGroup>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Credentials" icon="key" href="/config/credentials">
+    Sensitive credentials and API keys
+  </Card>
+  
+  <Card title="Settings" icon="gear" href="/config/settings">
+    Platform-wide configuration settings
+  </Card>
+</CardGroup>

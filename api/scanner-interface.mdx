@@ -1,0 +1,358 @@
+---
+title: 'Scanner Interface'
+description: 'Arbitrage opportunity scanner for detecting profitable betting opportunities'
+icon: 'magnifying-glass-chart'
+---
+
+## Overview
+
+The Scanner Interface identifies arbitrage opportunities by analyzing odds from multiple bookmakers and exchanges. It supports both API-based scanning and database odds analysis.
+
+## ArbitrageScanner
+
+### Initialize Scanner
+
+```python
+from PROPPR.PropprArbBot.core.scanner.arbitrage_scanner import ArbitrageScanner
+
+scanner = ArbitrageScanner(
+    mongo_uri=MONGO_CONNECTION_STRING,
+    db_name=MONGO_DATABASE,
+    min_margin=0.5  # Minimum 0.5% margin
+)
+```
+
+<ParamField path="mongo_uri" type="string" required>
+  MongoDB connection string
+</ParamField>
+
+<ParamField path="db_name" type="string" required>
+  Database name
+</ParamField>
+
+<ParamField path="min_margin" type="float" default="0.5">
+  Minimum profit margin percentage
+</ParamField>
+
+## DBOddsArbitrageScanner
+
+### Continuous Scanning
+
+```python
+from PROPPR.PropprArbBot.core.scanner.db_odds_arbitrage_scanner import DBOddsArbitrageScanner
+
+scanner = DBOddsArbitrageScanner(
+    mongo_uri=MONGO_CONNECTION_STRING,
+    db_name=MONGO_DATABASE,
+    alert_callback=lambda arb: process_alert(arb),
+    min_margin=0.5
+)
+
+scanner.run_continuous_scan(
+    interval_seconds=45,
+    hours_ahead=72,
+    max_poll_age_hours=1
+)
+```
+
+<ParamField path="alert_callback" type="callable" required>
+  Function to call when arbitrage is found
+  ```python
+  def alert_callback(arb_data: dict):
+      # Process arbitrage opportunity
+      pass
+  ```
+</ParamField>
+
+<ParamField path="interval_seconds" type="integer" default="45">
+  Scan interval in seconds
+</ParamField>
+
+<ParamField path="hours_ahead" type="integer" default="72">
+  Look ahead window in hours
+</ParamField>
+
+<ParamField path="max_poll_age_hours" type="integer" default="1">
+  Force rescan after hours
+</ParamField>
+
+## Arbitrage Detection
+
+### Calculate Arbitrage Margin
+
+```python
+def calculate_arb_margin(odds1: float, odds2: float) -> float:
+    """Calculate arbitrage margin from two odds"""
+    implied_prob1 = 1 / odds1
+    implied_prob2 = 1 / odds2
+    total_implied = implied_prob1 + implied_prob2
+    
+    # If total < 1, arbitrage exists
+    if total_implied < 1:
+        margin = ((1 / total_implied) - 1) * 100
+        return margin
+    return 0.0
+```
+
+### Example Calculation
+
+```python
+# Over 2.5 @ 2.10 (Bet365)
+# Under 2.5 @ 2.05 (Pinnacle)
+
+implied_over = 1 / 2.10   # 0.4762
+implied_under = 1 / 2.05  # 0.4878
+total = 0.4762 + 0.4878   # 0.964
+
+margin = ((1 / 0.964) - 1) * 100  # 3.73%
+```
+
+## Arbitrage Data Structure
+
+<ResponseField name="id" type="string" required>
+  Unique arbitrage ID
+</ResponseField>
+
+<ResponseField name="eventId" type="integer" required>
+  Event/fixture ID
+</ResponseField>
+
+<ResponseField name="profitMargin" type="float" required>
+  Profit margin percentage (e.g., 3.73)
+</ResponseField>
+
+<ResponseField name="totalStake" type="float" required>
+  Total stake amount
+</ResponseField>
+
+<ResponseField name="market" type="object" required>
+  Market details
+  ```python
+  {
+      "name": "Totals",
+      "hdp": 2.5
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="legs" type="array" required>
+  Array of bet legs
+  ```python
+  [
+      {
+          "bookmaker": "Bet365",
+          "side": "over",
+          "odds": "2.10",
+          "is_lay": False
+      },
+      {
+          "bookmaker": "Pinnacle",
+          "side": "under",
+          "odds": "2.05",
+          "is_lay": False
+      }
+  ]
+  ```
+</ResponseField>
+
+<ResponseField name="event" type="object" required>
+  Event details
+  ```python
+  {
+      "home": "Manchester United",
+      "away": "Liverpool",
+      "date": "2025-11-15T20:00:00Z",
+      "sport": "Football",
+      "league": "England - Premier League"
+  }
+  ```
+</ResponseField>
+
+## LAY Arbitrages
+
+### Detect LAY Arbitrage
+
+```python
+def detect_lay_arb(legs: list) -> tuple:
+    """Detect if this is a LAY arbitrage"""
+    for idx, leg in enumerate(legs):
+        if leg.get("is_lay", False):
+            return True, idx
+    return False, -1
+```
+
+### LAY Arbitrage Structure
+
+```python
+{
+    "id": "lay_arb_12345",
+    "profitMargin": 2.45,
+    "legs": [
+        {
+            "bookmaker": "Bet365",
+            "side": "over",
+            "odds": "2.10",
+            "is_lay": False,
+            "stake": 95.24
+        },
+        {
+            "bookmaker": "Betfair Exchange",
+            "side": "over",
+            "odds": "2.15",
+            "is_lay": True,
+            "lay_stake": 93.02,
+            "liability": 107.47,
+            "commission": 2.0
+        }
+    ]
+}
+```
+
+## Market Types
+
+### Supported Markets
+
+- **Totals** - Over/Under goals, points
+- **Spread** - Handicap betting
+- **Moneyline** - 1X2 markets
+- **Team Totals** - Team-specific over/under
+- **Corners** - Corner betting markets
+- **Cards** - Booking markets
+- **Shots** - Shots and shots on target
+
+### Market Normalization
+
+```python
+MARKET_NORMALIZATION = {
+    "Goals Over/Under": "Totals",
+    "Over/Under": "Totals",
+    "Alternative Goal Line": "Totals",
+    "Match Goals": "Totals"
+}
+
+def normalize_market(market_name: str) -> str:
+    """Normalize market name"""
+    return MARKET_NORMALIZATION.get(market_name, market_name)
+```
+
+## Filtering
+
+### Filter by Sport
+
+```python
+def filter_by_sport(arbs: list, enabled_sports: list) -> list:
+    """Filter arbitrages by enabled sports"""
+    return [
+        arb for arb in arbs
+        if arb.get("sport") in enabled_sports
+    ]
+```
+
+### Filter by Bookmaker
+
+```python
+def filter_by_bookmakers(arbs: list, enabled_bookmakers: list) -> list:
+    """Filter arbitrages by enabled bookmakers"""
+    filtered = []
+    for arb in arbs:
+        legs = arb.get("legs", [])
+        bookmakers = [leg.get("bookmaker") for leg in legs]
+        
+        # Check if all bookmakers are enabled
+        if all(bm in enabled_bookmakers for bm in bookmakers):
+            filtered.append(arb)
+    
+    return filtered
+```
+
+### Filter by Time
+
+```python
+def filter_by_time(arbs: list, max_hours: int) -> list:
+    """Filter arbitrages by time until event"""
+    now = datetime.now(timezone.utc)
+    filtered = []
+    
+    for arb in arbs:
+        event_date = arb.get("event", {}).get("date")
+        if not event_date:
+            continue
+        
+        event_dt = datetime.fromisoformat(event_date.replace('Z', '+00:00'))
+        hours_until = (event_dt - now).total_seconds() / 3600
+        
+        if 0 < hours_until <= max_hours:
+            filtered.append(arb)
+    
+    return filtered
+```
+
+## Odds Refresh
+
+### Refresh Arbitrage Odds
+
+```python
+def refresh_arb_odds(arb_data: dict, team_odds_collection) -> dict:
+    """Refresh odds from latest data"""
+    event_id = arb_data.get("eventId")
+    event = team_odds_collection.find_one({'id': event_id})
+    
+    if not event:
+        return None
+    
+    updated_legs = []
+    for leg in arb_data.get("legs", []):
+        bookmaker = leg.get("bookmaker")
+        side = leg.get("side")
+        
+        # Find latest odds
+        markets = event.get("bookmakers", {}).get(bookmaker, [])
+        for market in markets:
+            for odds in market.get("odds", []):
+                if odds.get(side):
+                    leg["odds"] = str(odds[side])
+                    break
+        
+        updated_legs.append(leg)
+    
+    # Recalculate margin
+    arb_data["legs"] = updated_legs
+    arb_data["profitMargin"] = calculate_new_margin(updated_legs)
+    
+    return arb_data
+```
+
+## Performance Optimization
+
+### Timestamp-Based Scanning
+
+```python
+def scan_updated_events_only(last_scan_time: datetime):
+    """Only scan events updated since last scan"""
+    events = team_odds_collection.find({
+        "updatedAt": {"$gte": last_scan_time}
+    })
+    
+    for event in events:
+        find_arbitrages(event)
+```
+
+### Batch Processing
+
+```python
+def scan_events_batch(event_ids: list, batch_size: int = 50):
+    """Scan events in batches for better performance"""
+    for i in range(0, len(event_ids), batch_size):
+        batch = event_ids[i:i + batch_size]
+        events = team_odds_collection.find({"id": {"$in": batch}})
+        
+        for event in events:
+            find_arbitrages(event)
+```
+
+## References
+
+- Source: `PropprArbBot/core/scanner/arbitrage_scanner.py`
+- Source: `PropprArbBot/core/scanner/db_odds_arbitrage_scanner.py`
+- Related: [Calculator Interface](/api/calculator-interface)
+- Related: [Odds Model](/api/models/odds)

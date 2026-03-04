@@ -1,0 +1,509 @@
+---
+title: "Alert Bots"
+description: "Documentation for PROPPR's six Telegram alert bots"
+---
+
+## Overview
+
+PROPPR operates six specialized Telegram bots that send real-time betting alerts. Each bot monitors specific markets and uses different data sources.
+
+<Note>
+All bots share a common architecture:
+- **Real-time updates** via WebSocket and polling
+- **User settings** for filtering (EV%, odds range, markets)
+- **Telegram integration** for instant mobile notifications
+- **Bet tracking** with automatic grading
+</Note>
+
+## Team Bot
+
+### Purpose
+Monitors team-level statistical markets in football (soccer). Specializes in corners, cards, shots, fouls, and goal totals.
+
+### Key Features
+- **50+ leagues** covered (Premier League, La Liga, Bundesliga, Serie A, Ligue 1, etc.)
+- **Sharp odds comparison** (M88 and FB Sports as fair value baseline)
+- **14+ market types** (team corners, team cards, team shots, etc.)
+- **Historical stats** from FotMob (last 5/10 games and season averages)
+- **Opening odds tracking** to identify line movement direction
+
+### Alert Types
+
+#### Value Alerts (Green)
+Bookmaker odds exceed fair value by user's minimum EV%.
+
+**Example Alert:**
+```
+🟢 VALUE ALERT
+⚽ England - Premier League
+🏟 Arsenal vs Chelsea
+📊 Team Corners Home 5.5+
+
+📈 VALUE: 8.2% EV
+💰 Bet365: 2.10 → M88: 1.93
+📉 Opening: 2.20 (dropped 4.5%)
+
+📊 STATS (Last 10):
+Arsenal: 6.2 corners/match (70% over 5.5)
+Form: ✅✅✅❌✅ (recent corners avg 6.8)
+```
+
+#### Caution Alerts (Yellow)  
+Moderate value (below user's threshold) but worth monitoring.
+
+#### Avoid Alerts (Red)  
+Sharp odds suggest the line is a trap (negative EV).
+
+### Markets Covered
+
+| Market | Description | Example |
+|--------|-------------|--------|
+| Team Corners Home/Away | Individual team corners | Arsenal Over 5.5 corners |
+| Total Corners | Match total corners | Over 10.5 corners |
+| Team Cards Home/Away | Individual team cards | Chelsea Over 2.5 cards |
+| Total Cards | Match total cards | Over 4.5 cards |
+| Team Shots Home/Away | Individual team shots | Arsenal Over 14.5 shots |
+| Team Shots On Target | Individual team SOT | Chelsea Over 5.5 SOT |
+| Team Goals Home/Away | Individual team goals | Arsenal Over 1.5 goals |
+| Total Goals | Match total goals | Over 2.5 goals |
+| Team Fouls | Individual team fouls | Arsenal Over 11.5 fouls |
+| Team Tackles | Individual team tackles | Chelsea Over 15.5 tackles |
+| Team Offsides | Individual team offsides | Arsenal Over 1.5 offsides |
+| First Team to Score | Which team scores first | Arsenal (Yes/No) |
+| First Team to Be Booked | Which team gets first card | Chelsea (Yes/No) |
+| Both Teams To Score | Both teams score | Yes/No |
+
+### Telegram Commands
+
+- `/start` - Initialize bot and show welcome
+- `/settings` - Configure EV%, odds range, markets
+- `/stats` - View personal betting statistics
+- `/fixture <team>` - Get upcoming fixtures for team
+- `/value` - Browse current value opportunities
+- `/track` - Track a bet manually
+- `/mute <fixture>` - Mute alerts for a specific match
+
+### Configuration File
+Source: `PropprTeamBot/core/bot/team_bot.py` (lines 1-500)
+
+---
+
+## Player Bot
+
+### Purpose
+Monitors player-specific prop markets in football. Tracks individual player performances for shots, goals, assists, fouls, passes, and tackles.
+
+### Key Features
+- **Position-aware filtering** (only relevant markets for each position)
+- **Formation mapping** (4-2-3-1, 4-3-3, 3-5-2, etc.)
+- **Lineup monitoring** (DNP refunds if player doesn't play)
+- **Player name normalization** (handles accents: "Håland" = "Haaland")
+- **Contextual matching** (resolves "El Hadji Diouf" vs "El Hadji Malick Diouf")
+
+### Alert Types
+
+Same three-tier system as Team Bot (Value/Caution/Avoid).
+
+**Example Alert:**
+```
+🟢 PLAYER VALUE
+⚽ England - Premier League  
+🏟 Arsenal vs Chelsea
+
+👤 Bukayo Saka (RW)
+📊 Player Shots On Target 1.5+
+
+📈 VALUE: 12.5% EV
+💰 Bet365: 2.40 → M88: 2.13  
+📉 Opening: 2.50 (dropped 4.0%)
+
+📊 STATS (Last 5):
+SOT/match: 2.4 (80% over 1.5)
+Recent: 3, 2, 1, 3, 3 ✅✅❌✅✅
+```
+
+### Markets Covered
+
+| Market | Position | Example |
+|--------|----------|--------|
+| Player Shots On Target | FW, WG, AM | Saka Over 1.5 SOT |
+| Player Shots Total | FW, WG, AM | Haaland Over 3.5 shots |
+| Player Goals | FW, WG, AM | Kane Over 0.5 goals |
+| Player Assists | WG, AM, CM | De Bruyne Over 0.5 assists |
+| Player Fouls Committed | All | Casemiro Over 1.5 fouls |
+| Player Tackles | DM, CB, FB | Rodri Over 2.5 tackles |
+| Player Passes | CM, CB | Rodri Over 85.5 passes |
+| Goalkeeper Saves | GK | Alisson Over 2.5 saves |
+| Player Offsides | FW | Haaland Over 1.5 offsides |
+| To Score Anytime | FW, WG | Salah (Yes/No) |
+
+### Position Abbreviations
+
+```python
+GK  = Goalkeeper
+CB  = Centre Back
+FB  = Fullback (RB/LB)
+WB  = Wing Back
+DM  = Defensive Midfield
+CM  = Central Midfield
+AM  = Attacking Midfield
+WG  = Winger (RW/LW)
+FW  = Forward/Striker
+```
+
+### Configuration File
+Source: `PropprPlayerBot/core/bot/player_bot.py` (lines 1-600)
+
+---
+
+## EV Bot
+
+### Purpose
+Cross-sport value betting system. Compares recreational bookmakers against sharp odds to find positive expected value (+EV) bets.
+
+### Key Features
+- **All sports supported** (Football, Basketball, Ice Hockey, Baseball, American Football, Tennis, MMA, Esports)
+- **Sharp sources**: M88, FB Sports, Betfair Exchange
+- **Recreational bookmakers**: Bet365, Polymarket, Vbet, Kambi, Paddy Power
+- **Line movement tracking** (opening vs current odds)
+- **Market-specific filtering** (ML, spread, totals, props)
+
+### Alert Categories
+
+#### Main Leagues
+**Sports**: Football only  
+**Leagues**: Top 20 European leagues  
+**Markets**: ML, Spread, Totals, BTTS
+
+#### Small Leagues  
+**Sports**: Football only  
+**Leagues**: All leagues except Top 20  
+**Markets**: ML, Spread, Totals, BTTS
+
+#### US Props
+**Sports**: NBA, NFL, NHL, MLB  
+**Markets**: Player props only
+
+#### Asia
+**Sports**: Football, Baseball  
+**Leagues**: Asian leagues (J-League, K-League, Chinese Super League)  
+**Markets**: ML, Spread, Totals
+
+#### Other Sports
+**Sports**: Basketball, Ice Hockey, Tennis, MMA, Boxing  
+**Markets**: All markets
+
+#### Esports
+**Sports**: CS2, Dota 2, League of Legends  
+**Markets**: ML, Spread, Totals
+
+### Example Alert
+
+```
+🎯 EV+ ALERT (8.5%)
+🏀 NBA - Los Angeles Lakers vs Boston Celtics
+
+📊 Spread (Lakers +4.5)
+💰 Bet365: 1.95 → Sharp: 1.82
+📈 EV: +8.5% | Chance: 52.4%
+📉 Opening: 2.00 (dropped 2.5%)
+
+🔗 [Bet365 Link]
+```
+
+### Configuration File
+Source: `PropprEVBot/core/bot/ev_bot.py` (lines 1-700)
+
+---
+
+## Arb Bot
+
+### Purpose  
+Detects arbitrage opportunities (risk-free profit) by finding mismatched odds across bookmakers.
+
+### Key Features
+- **Two-way arbs** (back both sides for guaranteed profit)
+- **Three-way arbs** (ML with draw option)
+- **Exchange arbs** (back + lay on Betfair Exchange)
+- **Real-time scanning** (WebSocket + database monitoring)
+- **Profit margin calculation** (accounts for exchange commission)
+
+### Alert Types
+
+#### Standard Arbitrage
+Back both sides of a market across two bookmakers.
+
+**Example:**
+```
+💎 ARBITRAGE (2.3% margin)
+⚽ Arsenal vs Chelsea - Totals 2.5
+
+📊 Over 2.5 @ Bet365: 2.10
+📊 Under 2.5 @ Polymarket: 2.05
+
+💰 Stake £100:
+  Bet365: £47.62 on Over
+  Polymarket: £52.38 on Under
+  
+✅ Guaranteed profit: £2.30 (2.3%)
+```
+
+#### Exchange Arbitrage (Lay)  
+Back at recreational bookmaker, lay at Betfair Exchange.
+
+**Example:**
+```
+💎 LAY ARB (1.8% margin)
+🏀 Lakers vs Celtics - ML
+
+📊 Back Lakers @ Bet365: 2.50
+📊 Lay Lakers @ Betfair: 2.44 (2% commission)
+
+💰 Stake £100:
+  Back: £100 on Lakers @ Bet365
+  Lay: £102.46 on Lakers @ Betfair
+  
+✅ Guaranteed profit: £1.80 (1.8%)
+```
+
+### Markets Covered
+- Moneyline (2-way and 3-way)
+- Spread/Handicap
+- Totals/Over-Under
+- Both Teams To Score
+- Corners, Cards (limited)
+
+### Configuration File
+Source: `PropprArbBot/core/bot/arb_bot.py` (lines 1-400)
+
+---
+
+## Horse Bot
+
+### Purpose
+UK horse racing value betting with night-before alerts targeting Betfair Starting Price (BSP).
+
+### Key Features
+- **WIN and PLACE markets** (separate alert types)
+- **Night-before window** (17:00-22:00 for next day's races)
+- **Multiple horses per race** (stake adjustment to manage risk)
+- **Daily limits** (max 8 WIN bets, unlimited PLACE bets)
+- **Target-based alerts** (aiming for ~6 quality picks per day)
+
+### Alert Types
+
+#### WIN Alerts (17:00-22:00 only)
+Value bets for horses to win the race.
+
+**Example:**
+```
+🏇 WIN ALERT
+📍 Cheltenham 14:30
+
+🐴 Energumene
+💰 Bookmaker: 2.80 → Fair: 2.50
+📈 EV: +12.0%
+
+💵 STAKE: 2.5 units (of 100u bankroll)
+🎯 Target: BSP (place bet morning of race)
+```
+
+#### PLACE Alerts (anytime)
+Value bets for horses to finish in top 2/3/4 (depends on field size).
+
+**Example:**
+```
+🏇 PLACE ALERT  
+📍 Ascot 15:15
+
+🐴 Constitution Hill
+💰 Bookmaker: 1.40 (Place) → Fair: 1.32
+📈 EV: +6.1%
+
+💵 STAKE: 3.0 units
+🎯 Place terms: Top 3 (1/5 odds)
+```
+
+### Bet Placement Strategy
+
+<Warning>
+**Do NOT place WIN bets immediately!** 
+
+Place WIN bets on race morning to get closer to BSP (Betfair Starting Price). Early odds often drift, reducing EV.
+</Warning>
+
+### Configuration File
+Source: `PropprHorseBot/core/horse_bot.py` (lines 1-500)
+
+---
+
+## Overtime Bot
+
+### Purpose
+Crypto sportsbook betting on Overtime Markets (on-chain) and Polymarket (USDC-based). Auto-places value bets using connected wallets.
+
+### Key Features  
+- **On-chain betting** (Optimism, Arbitrum, Base networks)
+- **Automated wallet management** (creates wallets, manages gas, places bets)
+- **EV+ detection** (compares Overtime vs Polymarket vs sharp odds)
+- **Unit-based staking** (Kelly Criterion for optimal bet sizing)
+- **Auto-confirm** (optional: auto-place bets above minimum odds)
+
+### Alert Types
+
+#### EV+ Alerts (Overtime Markets)
+**Example:**
+```
+🎯 OVERTIME VALUE
+🏈 NFL - Chiefs vs Bills
+
+📊 Spread (Chiefs -3.5)
+💰 Overtime: 2.10 → Sharp: 1.95
+📈 EV: +7.7%
+
+🤖 AUTO-BET: 2.5 units (0.025 ETH)
+⛽ Gas: ~$0.50
+
+[Confirm] [Skip]
+```
+
+#### Cross-Chain Arbitrage
+Detects arbitrage between Overtime and Polymarket.
+
+**Example:**
+```
+💎 CROSS-CHAIN ARB (1.5%)
+⚽ Arsenal vs Chelsea - Totals 2.5
+
+📊 Over @ Overtime: 2.08
+📊 Under @ Polymarket: 2.06
+
+💰 Stake 100 USDC:
+  Overtime: 48.31 USDC on Over
+  Polymarket: 51.69 USDC on Under
+  
+✅ Profit: 1.50 USDC (1.5%)
+⛽ Gas: ~$1.20 total
+```
+
+### Supported Networks
+- **Optimism** (primary, lowest gas)
+- **Arbitrum** (secondary)
+- **Base** (tertiary)
+- **Polygon** (backup)
+
+### Wallet Setup
+
+```python
+# Bot creates wallet automatically on /start
+# Displays deposit address for funding
+# Manages nonce, gas, and transaction submission
+
+/start → Generate wallet
+/deposit → Show deposit address  
+/balance → Check wallet balance
+/withdraw → Withdraw funds
+```
+
+### Configuration File
+Source: `OvertimeBot/core/bot/overtime_bot.py` (lines 1-800)
+
+---
+
+## Common Features Across All Bots
+
+### Bet Tracking
+All bots support manual bet tracking with automatic grading.
+
+**Commands:**
+- `/track` - Manually track a bet
+- `/bets` - View all tracked bets
+- `/stats` - Personal P&L statistics
+
+**Auto-grading:**
+- Grades bets after matches finish using FotMob API
+- Handles player DNP (refunds if player doesn't play)
+- Tracks ROI, win rate, average odds
+
+### User Settings
+
+**Filtering options:**
+- Minimum EV% (default: 2-5% depending on bot)
+- Odds range (min/max)
+- Markets to receive (select from full list)
+- Time filter (only bets X hours before match)
+- League filter (select specific leagues)
+
+**Display options:**
+- Opening odds (show/hide)
+- Historical stats (show/hide)  
+- Chance % (implied probability)
+
+### Telegram Integration
+
+**Alert format:**
+- Inline buttons for quick actions (Track, Mute, View Stats)
+- Deep links to bookmaker websites
+- Formatted with Markdown for readability
+- Emoji indicators for alert type
+
+**Rate limiting:**
+- Max 1 alert per 5 seconds per user (demo)
+- Unlimited for premium users
+
+---
+
+## Technical Implementation
+
+All bots share a common Python architecture:
+
+```python
+# Bot structure (example: Team Bot)
+from telegram.ext import Updater, CommandHandler
+from pymongo import MongoClient
+
+# MongoDB connection
+client = MongoClient(MONGO_URI)
+db = client[DATABASE_NAME]
+team_odds = db['team_odds']
+
+# Telegram bot
+updater = Updater(BOT_TOKEN)
+dispatcher = updater.dispatcher
+
+# Command handlers
+dispatcher.add_handler(CommandHandler('start', start_command))
+dispatcher.add_handler(CommandHandler('settings', settings_command))
+dispatcher.add_handler(CommandHandler('track', track_command))
+
+# Start polling
+updater.start_polling()
+```
+
+### Alert Processing Pipeline
+
+1. **Data Collection** (WebSocket or Poller)
+2. **Value Calculation** (compare bookmaker vs sharp odds)
+3. **User Filtering** (apply each user's settings)
+4. **Alert Formatting** (create Telegram message)
+5. **Delivery** (send via Telegram Bot API)
+6. **Deduplication** (prevent duplicate alerts)
+
+### Collections Used
+
+| Bot | Primary Collection | Secondary Collections |
+|-----|-------------------|----------------------|
+| Team | team_odds | team_user_settings, team_tracked_bets |
+| Player | player_odds | player_user_settings, player_tracked_bets |
+| EV | all_value_bets | user_settings, ev_sent_alerts |
+| Arb | arbitrage_bets | user_settings, arb_sent_alerts |
+| Horse | horse_racing_bets | horse_user_settings |
+| Overtime | overtime_odds | overtime_user_settings, overtime_placed_bets |
+
+---
+
+## Next Steps
+
+<Card title="Data Services" icon="database" href="/services/data-services">
+  Learn how data services power these alert bots
+</Card>

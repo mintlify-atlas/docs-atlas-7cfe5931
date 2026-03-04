@@ -1,0 +1,495 @@
+---
+title: 'Bet Tracking System'
+description: 'User bet tracking with alert reconstruction and statistics'
+icon: 'chart-line'
+---
+
+## Overview
+
+The tracking module provides comprehensive bet tracking for users, including alert reconstruction when original data is missing, user statistics, and automated bet settlement.
+
+## Module Structure
+
+```python
+SharedServices/tracking/
+├── __init__.py                              # Exports BetTrackingSystem, AlertReconstructionService
+├── bet_tracking_system.py                   # Main tracking system
+├── alert_reconstruction_service.py          # Alert data reconstruction
+├── request_tracker.py                       # Request tracking utilities
+└── handlers/
+    └── unified_bet_tracking_handlers.py     # Unified tracking handlers
+```
+
+## Bet Tracking System
+
+The `BetTrackingSystem` manages user bet tracking and statistics.
+
+### Initialization
+
+```python SharedServices/tracking/bet_tracking_system.py
+from PROPPR.SharedServices import BetTrackingSystem
+
+tracker = BetTrackingSystem(
+    mongo_connection_string="mongodb://localhost:27017/",
+    database_name="Cerebro",
+    bot_type='player'  # or 'team'
+)
+```
+
+### Tracking a Bet
+
+```python
+result = tracker.track_bet(
+    user_id=123456,
+    alert_data={
+        'Player': 'Mohamed Salah',
+        'Team': 'Liverpool',
+        'Market': 'Player Goals',
+        'Threshold': '0.5',
+        'Odds': 2.5,
+        'Bookmaker': 'Bet365',
+        'Match': 'Liverpool vs Chelsea',
+        'Date': '2026-03-04',
+        'Time': '15:00',
+        'fixture_id': 12345,
+        'player_id': 67890
+    },
+    actual_stake=10.0,
+    unit_size=1.0
+)
+
+if result['success']:
+    print(result['message'])
+    # Output: ✅ Bet tracked successfully!
+    #         🏟 Liverpool vs Chelsea
+    #         ⚽ Mohamed Salah - Over 0.5 Player Goals
+    #         💰 Stake: 10.00u
+    #         📊 Odds: 2.5
+    #         📈 Potential return: +15.00u
+```
+
+### User Statistics
+
+```python
+stats = tracker.get_user_stats(user_id=123456)
+
+print(stats)
+# {
+#     'total_bets': 50,
+#     'wins': 25,
+#     'losses': 20,
+#     'refunds': 3,
+#     'pending': 2,
+#     'half_wins': 1,
+#     'half_losses': 1,
+#     'total_staked': 500.0,
+#     'total_returns': 625.0,
+#     'settled_staked_units': 480.0,
+#     'settled_returns_units': 605.0,
+#     'pending_staked_units': 20.0,
+#     'profit_loss': 125.0,
+#     'profit_loss_units': 125.0,
+#     'roi_percentage': 26.04,
+#     'bets': [...]  # List of bet documents
+# }
+```
+
+### Formatted Statistics Message
+
+```python
+message = tracker.format_stats_message(stats, username='JohnDoe')
+print(message)
+```
+
+<Note>
+  Output:
+  ```
+  📊 Betting Statistics - @JohnDoe
+  
+  📈 Performance
+  ├ Total Bets: 50
+  ├ Settled: 48
+  ├ Wins: 25 (+ 1 half wins)
+  ├ Losses: 20 (+ 1 half losses)
+  ├ Refunds: 3
+  ├ Pending: 2
+  └ Win Rate: 52.1% (settled only)
+  
+  💰 Financials (settled only)
+  ├ Staked: 480.00u
+  ├ Returns: 605.00u
+  ├ Profit/Loss: 🟢 +125.00u
+  └ ROI: 🟢 +26.0%
+  
+  ⏳ Pending: 2 bets (20.00u staked)
+  
+  📝 Recent Bets
+  ✅ Mohamed Salah Anytime Goalscorer @2.50 (10.00u)
+  ❌ Kevin De Bruyne To Assist @1.80 (10.00u)
+  ⏳ Erling Haaland Over 0.5 Player Goals @1.65 (10.00u)
+  ```
+</Note>
+
+## Bet Document Structure
+
+Each tracked bet contains comprehensive data:
+
+```python
+bet_doc = {
+    # Unique identifiers
+    'bet_id': '507f1f77bcf86cd799439011',  # MongoDB ObjectId as string
+    'alert_id': 'original_alert_id',
+    'tracked_at': datetime.now(timezone.utc),
+    
+    # Fixture/match info
+    'fixture_id': 12345,
+    'match': 'Liverpool vs Chelsea',
+    'date': '2026-03-04',
+    'time': '15:00',
+    
+    # Player info (Player Bot only)
+    'player_id': 67890,
+    'player_name': 'Mohamed Salah',
+    'team': 'Liverpool',
+    
+    # Team info (Team Bot)
+    'team_id': 123,
+    'team': 'Liverpool',
+    
+    # Market info
+    'market': 'Player Goals',
+    'threshold': 0.5,
+    'market_direction': 'over',
+    
+    # Betting info
+    'bookmaker': 'Bet365',
+    'odds': 2.5,
+    'actual_stake': 10.0,
+    'unit_size': 1.0,
+    'units_staked': 10.0,
+    
+    # Status tracking
+    'status': 'pending',  # 'pending', 'won', 'lost', 'refund'
+    'returns': 0.0,
+    'profit_loss': 0.0,
+    'manual_override': False,
+    
+    # Result tracking (for grading)
+    'result_tracking': {
+        'result_status': 'pending',
+        'stat_type': 'goals',
+        'api_type_id': 52,
+        'api_location': 'player',
+        'expected_threshold': 0.5,
+        'market_direction': 'over',
+        'actual_value': None,
+        'graded_at': None
+    },
+    
+    # Alert metadata
+    'value_percentage': 15.5,
+    'model_odds': 2.2,
+    'chance_percentage': 45.5,
+    'data_scope': 'last5',
+    
+    # Multi-bet support
+    'is_multi_bet': False,
+    'multi_bet_selections': [],
+    'multi_bet_description': ''
+}
+```
+
+## Auto-Settling Bets
+
+### Auto-Settle User Bets
+
+```python
+# Settle all pending bets for a user
+result = tracker.auto_settle_user_bets(
+    user_id=123456,
+    api_token='your_api_token'  # Optional
+)
+
+print(result)
+# {
+#     'settled_count': 5,
+#     'settled_bets': [
+#         {
+#             'bet_id': '...',
+#             'market': 'Player Goals',
+#             'player_name': 'Mohamed Salah',
+#             'result': 'won',
+#             'stake': 10.0,
+#             'odds': 2.5,
+#             'returns': 25.0,
+#             'profit_loss': 15.0
+#         },
+#         # ...
+#     ],
+#     'message': '✅ Successfully settled 5 bet(s)'
+# }
+```
+
+### Manual Bet Settlement
+
+```python
+# Manually settle a bet (for corrections)
+success = tracker.update_bet_result(
+    user_id=123456,
+    bet_id='507f1f77bcf86cd799439011',
+    result_status='won',
+    actual_value=2.0,
+    manual_override=True  # Protects from auto-grading
+)
+```
+
+## Alert Reconstruction
+
+The `AlertReconstructionService` reconstructs missing alert data using multiple fallback methods.
+
+### Reconstruction Cascade
+
+<Steps>
+  <Step title="Parse Alert ID">
+    Extract fixture_id, player_id, market from composite ID
+  </Step>
+  <Step title="Search Database by IDs">
+    Find alert in MongoDB using extracted IDs
+  </Step>
+  <Step title="Parse Message Text">
+    Extract data from Telegram message using regex
+  </Step>
+  <Step title="Search Database by Names">
+    Find alert using fuzzy name matching
+  </Step>
+  <Step title="Fetch from API">
+    Use FotMob API to reconstruct fixture data (deprecated: SportMonks)
+  </Step>
+</Steps>
+
+### Usage
+
+```python SharedServices/tracking/alert_reconstruction_service.py
+from PROPPR.SharedServices import AlertReconstructionService
+from pymongo import MongoClient
+
+client = MongoClient("mongodb://localhost:27017/")
+db = client['Cerebro']
+
+service = AlertReconstructionService(
+    sportmonks_api_token='your_token',  # Optional (deprecated)
+    player_alerts_collection=db['all_positive_player_alerts'],
+    team_alerts_collection=db['all_positive_team_alerts']
+)
+
+# Reconstruct alert from callback data
+alert = service.reconstruct_alert(
+    alert_id="67890|12345|Player Goals|last5|Bet365",
+    message_text="🏟 Liverpool vs Chelsea\n👤 Mohamed Salah\n⚽ Over 0.5 Goals",
+    bot_type='player'
+)
+
+if alert:
+    print(f"Reconstructed: {alert['Player']} - {alert['Market']}")
+    print(f"Source: {alert['_reconstruction_source']}")
+```
+
+### Reconstruction Methods
+
+#### Method 1: Parse Alert ID
+
+```python
+# Composite ID format for player bets:
+# "player_id|fixture_id|market|scope|bookmaker"
+alert = service.reconstruct_from_alert_id(
+    alert_id="67890|12345|Player Goals|last5|Bet365",
+    bot_type='player'
+)
+
+print(alert)
+# {
+#     'player_id': 67890,
+#     'fixture_id': 12345,
+#     'Market': 'Player Goals',
+#     'Data Scope': 'last5',
+#     'Bookmaker': 'Bet365',
+#     '_reconstructed': True,
+#     '_reconstruction_source': 'alert_id'
+# }
+```
+
+#### Method 2: Parse Message Text
+
+```python
+message = """
+🏟 Liverpool vs Chelsea
+📅 04 Mar 26
+⏰ 15:00
+👤 Mohamed Salah (Liverpool)
+🎯 Over 0.5 Goals
+📚 Bookmaker Odds: 2.50 (Bet365)
+📈 Value: 15.5%
+"""
+
+alert = service.reconstruct_from_message_text(message, bot_type='player')
+
+print(alert)
+# {
+#     'Match': 'Liverpool vs Chelsea',
+#     'Date': '04 Mar 26',
+#     'Time': '15:00',
+#     'Player': 'Mohamed Salah',
+#     'Team': 'Liverpool',
+#     'Market': 'Player Goals',
+#     'Threshold': '0.5',
+#     'Odds': 2.5,
+#     'Bookmaker': 'Bet365',
+#     'Value %': 15.5,
+#     '_reconstructed': True,
+#     '_reconstruction_source': 'message_text'
+# }
+```
+
+#### Method 3: Database Search
+
+```python
+# Search by IDs (exact match)
+alert = service.search_alert_in_db(
+    fixture_id=12345,
+    player_id=67890,
+    market='Player Goals',
+    bot_type='player'
+)
+
+# Search by names (fuzzy match)
+alert = service.search_alert_by_names(
+    fixture_name='Liverpool vs Chelsea',
+    player_name='Mohamed Salah',
+    market='Player Goals',
+    bot_type='player'
+)
+```
+
+## Result Tracking Integration
+
+The tracking system integrates with the grading system via `result_tracking`:
+
+```python
+def _build_result_tracking(self, alert_data: Dict, bet_doc: Dict) -> Dict:
+    """Construct result_tracking payload for grading"""
+    market_name = bet_doc.get('market')
+    is_player_bet = bool(alert_data.get('player_id'))
+    
+    mapping = UnifiedMarketMapper.get_market_mapping(
+        market_name,
+        is_player_bet=is_player_bet
+    )
+    
+    return {
+        'result_status': 'pending',
+        'stat_type': mapping.get('stat_type'),
+        'api_type_id': mapping.get('type_id'),
+        'api_location': self._derive_api_location(alert_data, mapping),
+        'expected_threshold': self._parse_expected_threshold(alert_data),
+        'market_direction': bet_doc.get('market_direction', 'over'),
+        'side': alert_data.get('team_assignment')
+    }
+```
+
+## Bet Management
+
+### Get Pending Bets
+
+```python
+pending = tracker.get_pending_bets(user_id=123456)
+
+for bet in pending:
+    print(f"{bet['player_name']} - {bet['market']} @ {bet['odds']}")
+```
+
+### Delete a Bet
+
+```python
+success = tracker.delete_bet(
+    user_id=123456,
+    bet_id='507f1f77bcf86cd799439011'
+)
+```
+
+### Update Stake or Odds
+
+```python
+# Update stake
+tracker.update_bet_stake(
+    user_id=123456,
+    bet_id='507f1f77bcf86cd799439011',
+    new_stake=20.0
+)
+
+# Update odds
+tracker.update_bet_odds(
+    user_id=123456,
+    bet_id='507f1f77bcf86cd799439011',
+    new_odds=2.75
+)
+```
+
+## Database Structure
+
+Bets are stored in MongoDB collection `user_tracked_bets`:
+
+```python
+{
+    '_id': ObjectId('...'),
+    'user_id': 123456,
+    'username': 'JohnDoe',
+    'unit_size': 1.0,
+    'created_at': datetime.now(timezone.utc),
+    'last_updated': datetime.now(timezone.utc),
+    'bets': [  # Array of bet documents
+        { ... },  # Bet 1
+        { ... },  # Bet 2
+        # ...
+    ]
+}
+```
+
+### Indexes
+
+```python
+# Created automatically on initialization
+user_tracked_bets.create_index('user_id', unique=True)
+user_tracked_bets.create_index('bets.bet_id')
+user_tracked_bets.create_index('bets.status')
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always Build result_tracking">
+    Ensure `result_tracking` is populated for auto-grading compatibility.
+  </Accordion>
+  
+  <Accordion title="Use Manual Override Carefully">
+    Manual overrides prevent auto-grading. Only use for corrections.
+  </Accordion>
+  
+  <Accordion title="Handle Missing Data Gracefully">
+    Use alert reconstruction when original alert data is unavailable.
+  </Accordion>
+  
+  <Accordion title="Separate Settled and Pending Stats">
+    Always calculate ROI and P/L from settled bets only.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Bet Grading" icon="trophy" href="/shared/grading">
+    Learn how tracked bets are automatically graded
+  </Card>
+  <Card title="Market Mapping" icon="map" href="/shared/mapping">
+    Understand market mapping for result_tracking
+  </Card>
+</CardGroup>

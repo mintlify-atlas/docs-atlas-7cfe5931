@@ -1,0 +1,417 @@
+---
+title: 'Grading API'
+description: 'Bet grading and result processing services'
+icon: 'clipboard-check'
+---
+
+## Overview
+
+The Grading API handles bet settlement by comparing actual match statistics against bet thresholds. It supports both immediate grading (for finished fixtures) and scheduled grading.
+
+## ImmediateBetGrader
+
+### Initialize Grader
+
+```python
+from PROPPR.SharedServices.grading.processors.immediate_bet_grader import ImmediateBetGrader
+
+grader = ImmediateBetGrader(
+    api_token='',  # Deprecated - FotMob used instead
+    bot_type='player'  # 'player' or 'team'
+)
+```
+
+<ParamField path="api_token" type="string">
+  Deprecated - kept for backward compatibility
+</ParamField>
+
+<ParamField path="bot_type" type="string" default="player">
+  Bot type: 'player' or 'team'
+</ParamField>
+
+### Check Fixture Status
+
+```python
+def is_fixture_finished(fixture_data: dict) -> bool:
+    """Check if fixture has finished (FotMob format)"""
+    return grader.is_fixture_finished(fixture_data)
+```
+
+<ParamField path="fixture_data" type="object" required>
+  Full fixture data from FotMob API
+</ParamField>
+
+<ResponseField name="is_finished" type="boolean">
+  True if fixture is finished
+</ResponseField>
+
+## Grade Bets
+
+### Grade Single Bet
+
+```python
+bet_doc = {
+    'market': 'Player Shots On Target',
+    'threshold': 1.5,
+    'market_direction': 'over',
+    'player_name': 'Mohamed Salah',
+    'odds': 2.10,
+    'actual_stake': 10.0,
+    'units_staked': 1.0
+}
+
+graded_bet = grader.grade_bet_from_fixture_data(
+    bet_doc=bet_doc,
+    fixture_data=fixture_data
+)
+```
+
+<ParamField path="bet_doc" type="object" required>
+  Bet document with market, threshold, and player/team info
+</ParamField>
+
+<ParamField path="fixture_data" type="object" required>
+  Full fixture data from FotMob API
+</ParamField>
+
+<ParamField path="alert_data" type="object">
+  Optional alert data for additional context
+</ParamField>
+
+<ResponseField name="status" type="string">
+  Result status: "won", "lost", "refund", "half_win", "half_loss"
+</ResponseField>
+
+<ResponseField name="actual_value" type="float">
+  Actual statistic value from match
+</ResponseField>
+
+<ResponseField name="returns" type="float">
+  Total return amount
+</ResponseField>
+
+<ResponseField name="profit_loss" type="float">
+  Profit or loss amount
+</ResponseField>
+
+<ResponseField name="settled_at" type="datetime">
+  Settlement timestamp
+</ResponseField>
+
+### Grade Alert with Fixture
+
+```python
+alert_data = {
+    'Market': 'Player Goals',
+    'Threshold': 0.5,
+    'market_direction': 'over',
+    'Player': 'Erling Haaland',
+    'Odds': 1.90
+}
+
+graded_alert = grader.grade_alert_with_fixture(
+    alert_data=alert_data,
+    fixture_data=fixture_data
+)
+```
+
+<ResponseField name="result_tracking" type="object">
+  Grading result details
+  ```python
+  {
+      'result_status': 'won',
+      'actual_value': 2.0,
+      'graded_at': datetime.now(timezone.utc),
+      'graded_immediately': True
+  }
+  ```
+</ResponseField>
+
+## Player Statistics
+
+### Get Player Stats
+
+```python
+def _get_player_stat_value(
+    fixture_data: dict,
+    player_name: str,
+    api_type_id: int,
+    stat_type: str
+) -> Optional[float]:
+    """Get player stat value from FotMob fixture data"""
+```
+
+<ParamField path="fixture_data" type="object" required>
+  FotMob fixture data
+</ParamField>
+
+<ParamField path="player_name" type="string" required>
+  Player name to search for
+</ParamField>
+
+<ParamField path="api_type_id" type="integer" required>
+  FotMob stat type ID
+</ParamField>
+
+<ParamField path="stat_type" type="string" required>
+  Stat type key (e.g., 'goals', 'shots_on_target')
+</ParamField>
+
+### Stat Type Mapping
+
+```python
+TYPE_ID_MAPPING = {
+    52: 'goals',
+    34: 'corners',
+    84: 'yellow_cards',
+    83: 'red_cards',
+    42: 'shots',
+    86: 'shots_on_target',
+    78: 'tackles',
+    51: 'offsides',
+    56: 'fouls',
+    57: 'saves',
+    80: 'passes',
+    81: 'successful_passes',
+    100: 'interceptions',
+    109: 'successful_dribbles',
+    98: 'crosses'
+}
+```
+
+## Team Statistics
+
+### Get Team Stats
+
+```python
+def _get_team_stat_value(
+    fixture_data: dict,
+    team_name: str,
+    api_type_id: int
+) -> Optional[float]:
+    """Get team stat value from FotMob fixture data"""
+```
+
+<ParamField path="fixture_data" type="object" required>
+  FotMob fixture data
+</ParamField>
+
+<ParamField path="team_name" type="string" required>
+  Team name
+</ParamField>
+
+<ParamField path="api_type_id" type="integer" required>
+  Stat type ID
+</ParamField>
+
+## Result Determination
+
+### Determine Result
+
+```python
+def _determine_result(
+    actual_value: float,
+    threshold: float,
+    direction: str
+) -> str:
+    """Determine bet result (won/lost/refund)"""
+```
+
+<ParamField path="actual_value" type="float" required>
+  Actual statistic value
+</ParamField>
+
+<ParamField path="threshold" type="float" required>
+  Expected threshold
+</ParamField>
+
+<ParamField path="direction" type="string" required>
+  'over' or 'under'
+</ParamField>
+
+### Result Logic
+
+**Over Bets:**
+- `actual > threshold` → Won
+- `actual == threshold` → Refund
+- `actual < threshold` → Lost
+
+**Under Bets:**
+- `actual < threshold` → Won
+- `actual == threshold` → Refund
+- `actual > threshold` → Lost
+
+## Return Calculation
+
+### Calculate Returns
+
+```python
+def _calculate_returns(bet_doc: dict, result_status: str) -> dict:
+    """Calculate returns and profit/loss based on result"""
+```
+
+**Return Formulas:**
+
+- **Won**: `returns = stake × odds`
+- **Refund**: `returns = stake`
+- **Half Win**: `returns = (stake / 2) × odds + (stake / 2)`
+- **Half Loss**: `returns = stake / 2`
+- **Lost**: `returns = 0`
+
+**Profit/Loss**: `profit_loss = returns - stake`
+
+## Player Lineup Check
+
+### Check if Player Played
+
+```python
+def _check_player_in_lineup(fixture_data: dict, player_name: str) -> bool:
+    """Check if player was in squad/lineup (FotMob format)"""
+```
+
+<ParamField path="fixture_data" type="object" required>
+  FotMob fixture data with lineup
+</ParamField>
+
+<ParamField path="player_name" type="string" required>
+  Player name to check
+</ParamField>
+
+<ResponseField name="in_squad" type="boolean">
+  True if player was in starting XI or bench
+</ResponseField>
+
+### Refund Reasons
+
+- **not_in_squad** - Player not in matchday squad
+- **did_not_play** - Player in squad but didn't play
+- **stats_unavailable** - Statistics not available
+
+## Grading Errors
+
+### Error Handling
+
+```python
+def _grade_as_error(bet_doc: dict, reason: str) -> dict:
+    """Mark bet as having grading error"""
+    bet_doc['_grading_error'] = reason
+    bet_doc['_graded_immediately'] = False
+    return bet_doc
+```
+
+**Common Errors:**
+- "Unknown market" - Market not mappable
+- "Stats not available" - Statistics missing
+- "Market not mappable" - No API type mapping
+
+## Convenience Functions
+
+### Grade Bet Immediately
+
+```python
+from PROPPR.SharedServices.grading.processors.immediate_bet_grader import grade_bet_immediately
+
+graded_bet = grade_bet_immediately(
+    bet_doc=bet_doc,
+    fixture_data=fixture_data,
+    bot_type='player'
+)
+```
+
+## Result Processors
+
+### AlertResultProcessor
+
+Processes alert results and updates database.
+
+```python
+from PROPPR.SharedServices.grading.processors.alert_result_processor import AlertResultProcessor
+
+processor = AlertResultProcessor(
+    alerts_collection=alerts_collection,
+    api_token=FOTMOB_API_TOKEN
+)
+
+processor.process_finished_fixtures()
+```
+
+### ResultProcessor
+
+Base processor for result processing.
+
+```python
+from PROPPR.SharedServices.grading.processors.result_processor import ResultProcessor
+
+processor = ResultProcessor(
+    mongo_uri=MONGO_CONNECTION_STRING,
+    database_name=MONGO_DATABASE
+)
+```
+
+## Grading Scheduler
+
+### Schedule Grading
+
+```python
+from PROPPR.SharedServices.grading.scheduler.unified_scheduler import UnifiedGradingScheduler
+
+scheduler = UnifiedGradingScheduler(
+    mongo_uri=MONGO_CONNECTION_STRING,
+    database_name=MONGO_DATABASE,
+    api_token=FOTMOB_API_TOKEN
+)
+
+scheduler.start()
+```
+
+**Features:**
+- Grades finished fixtures every 5 minutes
+- Checks fixtures 15 minutes after scheduled start
+- Handles delayed/postponed fixtures
+- Retries failed gradings
+
+## Example Usage
+
+### Complete Grading Flow
+
+```python
+# Initialize grader
+grader = ImmediateBetGrader(bot_type='player')
+
+# Fetch fixture data
+fixture_data = grader.fetch_fixture_data(fotmob_match_id=4193204)
+
+# Check if finished
+if grader.is_fixture_finished(fixture_data):
+    # Grade bet
+    bet_doc = {
+        'market': 'Player Shots On Target',
+        'threshold': 1.5,
+        'market_direction': 'over',
+        'player_name': 'Mohamed Salah',
+        'odds': 2.10,
+        'actual_stake': 10.0,
+        'units_staked': 1.0
+    }
+    
+    graded_bet = grader.grade_bet_from_fixture_data(
+        bet_doc=bet_doc,
+        fixture_data=fixture_data
+    )
+    
+    # Check result
+    if graded_bet.get('status') == 'won':
+        print(f"Bet won! Profit: {graded_bet['profit_loss']:.2f}")
+    elif graded_bet.get('status') == 'lost':
+        print(f"Bet lost: {graded_bet['profit_loss']:.2f}")
+    elif graded_bet.get('status') == 'refund':
+        print("Bet refunded")
+```
+
+## References
+
+- Source: `SharedServices/grading/processors/immediate_bet_grader.py`
+- Source: `SharedServices/grading/processors/alert_result_processor.py`
+- Source: `SharedServices/grading/processors/result_processor.py`
+- Related: [Mapping API](/api/mapping-api)
+- Related: [Tracking API](/api/tracking-api)

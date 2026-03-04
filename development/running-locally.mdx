@@ -1,0 +1,425 @@
+---
+title: 'Running Services Locally'
+description: 'Run PROPPR bots and services locally for development and testing'
+keywords: ['development', 'local', 'running', 'bots', 'testing']
+icon: 'play'
+---
+
+## Overview
+
+PROPPR provides multiple ways to run services locally for development. You can run individual bots, data services, or the entire platform.
+
+---
+
+## Quick Start
+
+### Using the Local Development Runner
+
+The easiest way to run services locally is using the interactive shell script:
+
+```bash
+./scripts/local/run_local.sh
+```
+
+This presents a menu to select which service to run:
+
+```
+==========================================
+PROPPR Local Development Runner
+==========================================
+
+Which module to run?
+1. Team Bot
+2. Player Bot
+3. Arb Bot
+4. EV Bot
+5. Overtime Bot
+6. Horse Bot
+7. WebSocket Updater
+8. Unified API Poller
+9. Grading Scheduler (Team)
+10. Grading Scheduler (Player)
+11. Stats Update Pipeline
+
+Enter choice (1-11):
+```
+
+<Info>
+The script automatically loads environment variables from `.env` if present.
+</Info>
+
+---
+
+## Running Individual Bots
+
+### Alert Bots
+
+Each alert bot can be run directly using Python's module syntax:
+
+<CodeGroup>
+
+```bash Team Bot
+python -m PROPPR.PropprTeamBot.core.bot.team_bot
+```
+
+```bash Player Bot
+python -m PROPPR.PropprPlayerBot.core.bot.player_bot
+```
+
+```bash EV Bot
+python -m PROPPR.PropprEVBot.core.bot.ev_bot
+```
+
+```bash Arb Bot
+python -m PROPPR.PropprArbBot.core.scanner.arbitrage_scanner
+```
+
+```bash Horse Bot
+python -m PROPPR.PropprHorseBot.core.bot.horse_bot
+```
+
+```bash Overtime Bot
+python -m PROPPR.OvertimeBot.core.bot.overtime_bot
+```
+
+</CodeGroup>
+
+<Warning>
+Make sure you're in the **parent directory** of PROPPR (e.g., `Cerebro/`) when running these commands, not inside the PROPPR directory itself. This ensures Python can import `PROPPR.*` correctly.
+</Warning>
+
+### Using Runner Scripts
+
+Alternatively, use the dedicated runner scripts located in each service:
+
+<CodeGroup>
+
+```bash Team Bot Runner
+python PROPPR/PropprTeamBot/runners/run_team_bot.py
+```
+
+```bash EV Bot Runner
+python PROPPR/PropprEVBot/runners/run_ev_bot.py
+```
+
+```bash Unified Poller Runner
+python PROPPR/UnifiedAPIPoller/runners/run_unified_poller.py
+```
+
+</CodeGroup>
+
+The runner scripts automatically configure the Python path for both development and production environments.
+
+---
+
+## Running Data Services
+
+### WebSocket Updater
+
+Monitor real-time odds updates via WebSocket connections:
+
+```bash
+python -m PROPPR.WebsocketUpdater.core.websocket_updater
+```
+
+This service:
+- Connects to bookmaker WebSocket feeds
+- Updates MongoDB with live odds changes
+- Provides real-time data for alert bots
+
+### Unified API Poller
+
+Poll odds from multiple API sources:
+
+```bash
+python -m PROPPR.UnifiedAPIPoller.core.unified_poller
+```
+
+Or using the runner:
+
+```bash
+python PROPPR/UnifiedAPIPoller/runners/run_unified_poller.py
+```
+
+This service:
+- Polls OddsAPI and other data sources
+- Handles rate limiting and retries
+- Updates MongoDB collections with fresh odds
+
+### Stats Update Pipeline
+
+Collect player and team statistics from FotMob:
+
+```bash
+python -m PROPPR.StatsUpdateFM.core.pipeline.stats_update
+```
+
+This service:
+- Fetches match statistics from FotMob API
+- Updates player projection data
+- Provides data for value calculations
+
+---
+
+## Running Grading Services
+
+### Team Grading Scheduler
+
+Grade team market bets and sync results to Google Sheets:
+
+```python
+python -c "
+from PROPPR.SharedServices.grading.scheduler.unified_scheduler import UnifiedGradingScheduler
+from PROPPR.config import get_mongo_connection_string, get_mongo_database, get_footystats_api_key
+
+scheduler = UnifiedGradingScheduler(
+    mongo_connection_string=get_mongo_connection_string(),
+    database_name=get_mongo_database(),
+    api_token=get_footystats_api_key(),
+    credentials_path='credentials.json',
+    spreadsheet_name='PROPPR Team Bot',
+    bot_type='team'
+)
+scheduler.start()
+"
+```
+
+### Player Grading Scheduler
+
+Grade player prop bets:
+
+```python
+python -c "
+from PROPPR.SharedServices.grading.scheduler.unified_scheduler import UnifiedGradingScheduler
+from PROPPR.config import get_mongo_connection_string, get_mongo_database, get_footystats_api_key
+
+scheduler = UnifiedGradingScheduler(
+    mongo_connection_string=get_mongo_connection_string(),
+    database_name=get_mongo_database(),
+    api_token=get_footystats_api_key(),
+    credentials_path='credentials.json',
+    spreadsheet_name='PROPPR Player Bot',
+    bot_type='player'
+)
+scheduler.start()
+"
+```
+
+<Note>
+Grading services require `credentials.json` for Google Sheets integration. See [Local Setup](/development/local-setup#google-sheets-integration-optional) for configuration.
+</Note>
+
+---
+
+## Python Path Configuration
+
+PROPPR services use absolute imports (`from PROPPR.module import ...`). The runner scripts automatically configure paths:
+
+```python run_team_bot.py
+import sys
+import os
+from pathlib import Path
+
+# Auto-detect environment and set path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+if '/opt/' in script_dir:
+    # Production: Add /opt to path
+    proppr_root = '/opt'
+else:
+    # Development: Go up to Cerebro root
+    proppr_root = Path(script_dir).parent.parent.parent.parent
+
+if proppr_root not in sys.path:
+    sys.path.insert(0, proppr_root)
+
+from PROPPR.PropprTeamBot.core.bot.team_bot import main
+
+if __name__ == "__main__":
+    main()
+```
+
+<Tip>
+If you encounter import errors, make sure you're running from the correct directory (the parent of PROPPR) or using the runner scripts.
+</Tip>
+
+---
+
+## Development Workflows
+
+### Working on Alert Logic
+
+<Steps>
+  <Step title="Start data service">
+    Run the Unified API Poller to populate MongoDB with fresh odds:
+    ```bash
+    python -m PROPPR.UnifiedAPIPoller.core.unified_poller
+    ```
+  </Step>
+  
+  <Step title="Start your bot">
+    In a separate terminal, run the bot you're working on:
+    ```bash
+    python -m PROPPR.PropprTeamBot.core.bot.team_bot
+    ```
+  </Step>
+  
+  <Step title="Monitor output">
+    Watch the console for alerts and debug output. The bot will scan MongoDB and send alerts to the configured Telegram channel.
+  </Step>
+</Steps>
+
+### Testing Configuration Changes
+
+Test configuration loading without running full services:
+
+```python
+python -c "
+from PROPPR.config import (
+    get_mongo_connection_string,
+    get_mongo_database,
+    get_telegram_token,
+    is_development
+)
+
+print(f'Environment: {'Development' if is_development() else 'Production'}')
+print(f'MongoDB URI: {get_mongo_connection_string()[:50]}...')
+print(f'Database: {get_mongo_database()}')
+print(f'Team Bot Token: {get_telegram_token('team')[:20]}...')
+"
+```
+
+### Testing Grading Logic
+
+Run grading on specific alerts without starting the scheduler:
+
+```python
+python -c "
+from PROPPR.SharedServices.grading.processors.result_processor import UnifiedResultProcessor
+from PROPPR.config import get_mongo_connection_string, get_mongo_database
+
+processor = UnifiedResultProcessor(
+    mongo_uri=get_mongo_connection_string(),
+    database_name=get_mongo_database(),
+    bot_type='team'
+)
+
+# Get ungraded alerts
+alerts = processor.get_ungraded_alerts()
+print(f'Found {len(alerts)} ungraded alerts')
+
+# Process one cycle
+graded_count = processor.process_all_alerts()
+print(f'Graded {graded_count} alerts')
+
+processor.close()
+"
+```
+
+---
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="ModuleNotFoundError: No module named 'PROPPR'">
+    **Cause:** Python can't find the PROPPR package in its path.
+    
+    **Solution:** Make sure you're running from the parent directory of PROPPR:
+    ```bash
+    cd /path/to/Cerebro  # Parent of PROPPR
+    python -m PROPPR.PropprTeamBot.core.bot.team_bot
+    ```
+    
+    Or use the runner scripts which handle this automatically:
+    ```bash
+    python PROPPR/PropprTeamBot/runners/run_team_bot.py
+    ```
+  </Accordion>
+  
+  <Accordion title="CredentialError: Missing environment variable">
+    **Cause:** Required credentials not set in `.env` file.
+    
+    **Solution:** Check that your `.env` file exists and contains all required variables:
+    ```bash
+    cat .env | grep MONGODB_URI_DEVELOPMENT
+    cat .env | grep TELEGRAM_TOKEN_TEAM_BOT
+    ```
+    
+    See [Local Setup](/development/local-setup#environment-configuration) for required variables.
+  </Accordion>
+  
+  <Accordion title="MongoDB connection timeout">
+    **Cause:** MongoDB not running or connection string incorrect.
+    
+    **Solution:** 
+    - Verify MongoDB is running: `mongosh` or check Docker container
+    - Test connection string: `mongosh "<your_connection_string>"`
+    - Check IP whitelist if using MongoDB Atlas
+  </Accordion>
+  
+  <Accordion title="Telegram bot not responding">
+    **Cause:** Invalid bot token or bot not started.
+    
+    **Solution:**
+    - Verify token with BotFather on Telegram
+    - Check `.env` has correct token format: `123456789:ABCdef...`
+    - Ensure bot is not already running in production (only one instance can run per token)
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Debugging Tips
+
+### Enable Debug Logging
+
+Most services support debug logging. Modify the service's logging configuration:
+
+```python
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,  # Changed from INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+```
+
+### Monitor MongoDB Operations
+
+Watch MongoDB operations in real-time:
+
+```bash
+mongosh
+use proppr
+db.currentOp()
+```
+
+Or watch a specific collection for changes:
+
+```javascript
+db.all_positive_alerts.watch()
+```
+
+### Test Specific Functions
+
+Use Python's interactive shell to test individual functions:
+
+```python
+python
+>>> from PROPPR.SharedServices.mapping.market_mapper import UnifiedMarketMapper
+>>> mapping = UnifiedMarketMapper.get_market_mapping("Goals", is_player=False)
+>>> print(mapping)
+```
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Run integration tests and verify your changes
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/architecture">
+    Understand PROPPR's service architecture
+  </Card>
+</CardGroup>

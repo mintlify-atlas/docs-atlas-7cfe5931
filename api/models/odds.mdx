@@ -1,0 +1,470 @@
+---
+title: 'Odds Model'
+description: 'Bookmaker odds structures and market definitions'
+icon: 'chart-line'
+---
+
+## Overview
+
+The Odds Model defines data structures for bookmaker odds across different markets, including totals, spreads, moneylines, and exchange markets.
+
+## Bookmaker Odds Structure
+
+### Market Object
+
+<ParamField path="name" type="string" required>
+  Market name (e.g., "Totals", "Moneyline", "Spread")
+</ParamField>
+
+<ParamField path="odds" type="array" required>
+  Array of odds objects for different lines
+</ParamField>
+
+<ParamField path="updatedAt" type="string">
+  Last update timestamp (ISO 8601)
+</ParamField>
+
+### Odds Object
+
+<ParamField path="hdp" type="float">
+  Handicap/line value (e.g., 2.5, -1.5)
+</ParamField>
+
+<ParamField path="over" type="float">
+  Over odds (decimal)
+</ParamField>
+
+<ParamField path="under" type="float">
+  Under odds (decimal)
+</ParamField>
+
+<ParamField path="home" type="float">
+  Home odds (decimal)
+</ParamField>
+
+<ParamField path="away" type="float">
+  Away odds (decimal)
+</ParamField>
+
+<ParamField path="draw" type="float">
+  Draw odds (decimal)
+</ParamField>
+
+<ParamField path="yes" type="float">
+  Yes odds (decimal)
+</ParamField>
+
+<ParamField path="no" type="float">
+  No odds (decimal)
+</ParamField>
+
+<ParamField path="updatedAt" type="string">
+  Odds update timestamp
+</ParamField>
+
+## Market Types
+
+### Totals Market
+
+```json
+{
+  "name": "Totals",
+  "odds": [
+    {
+      "hdp": 2.5,
+      "over": 2.10,
+      "under": 1.85,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "hdp": 3.0,
+      "over": 2.65,
+      "under": 1.55,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "hdp": 3.5,
+      "over": 3.40,
+      "under": 1.35,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    }
+  ],
+  "updatedAt": "2024-03-10T14:25:00Z"
+}
+```
+
+### Moneyline Market (1X2)
+
+```json
+{
+  "name": "Moneyline",
+  "odds": [
+    {
+      "home": 2.10,
+      "draw": 3.40,
+      "away": 3.80,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    }
+  ],
+  "updatedAt": "2024-03-10T14:25:00Z"
+}
+```
+
+### Spread Market
+
+```json
+{
+  "name": "Spread",
+  "odds": [
+    {
+      "hdp": -1.5,
+      "home": 2.05,
+      "away": 1.90,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "hdp": -0.5,
+      "home": 1.55,
+      "away": 2.55,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    }
+  ],
+  "updatedAt": "2024-03-10T14:25:00Z"
+}
+```
+
+### Team Totals
+
+```json
+{
+  "name": "Team Total Home",
+  "odds": [
+    {
+      "hdp": 1.5,
+      "over": 1.95,
+      "under": 1.95,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "hdp": 2.0,
+      "over": 2.55,
+      "under": 1.60,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    }
+  ],
+  "updatedAt": "2024-03-10T14:25:00Z"
+}
+```
+
+### Corners Market
+
+```json
+{
+  "name": "Corners Totals",
+  "odds": [
+    {
+      "hdp": 10.5,
+      "over": 2.00,
+      "under": 1.90,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "hdp": 11.5,
+      "over": 2.35,
+      "under": 1.65,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    }
+  ],
+  "updatedAt": "2024-03-10T14:25:00Z"
+}
+```
+
+### Cards Market
+
+```json
+{
+  "name": "Bookings Totals",
+  "odds": [
+    {
+      "hdp": 4.5,
+      "over": 2.10,
+      "under": 1.85,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    }
+  ],
+  "updatedAt": "2024-03-10T14:25:00Z"
+}
+```
+
+## Exchange Markets
+
+### LAY Odds Structure
+
+<ParamField path="layOver" type="float">
+  LAY over odds (what you offer)
+</ParamField>
+
+<ParamField path="layUnder" type="float">
+  LAY under odds
+</ParamField>
+
+<ParamField path="layHome" type="float">
+  LAY home odds
+</ParamField>
+
+<ParamField path="layAway" type="float">
+  LAY away odds
+</ParamField>
+
+<ParamField path="layDraw" type="float">
+  LAY draw odds
+</ParamField>
+
+### Exchange Market Example
+
+```json
+{
+  "name": "Totals",
+  "odds": [
+    {
+      "hdp": 2.5,
+      "over": 2.08,
+      "under": 1.87,
+      "layOver": 2.12,
+      "layUnder": 1.90,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    }
+  ],
+  "updatedAt": "2024-03-10T14:25:00Z"
+}
+```
+
+## Complete Bookmaker Structure
+
+### Full Bookmaker Object
+
+```json
+{
+  "Bet365": [
+    {
+      "name": "Totals",
+      "odds": [
+        {
+          "hdp": 2.5,
+          "over": 2.10,
+          "under": 1.85,
+          "updatedAt": "2024-03-10T14:25:00Z"
+        }
+      ],
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "name": "Moneyline",
+      "odds": [
+        {
+          "home": 2.10,
+          "draw": 3.40,
+          "away": 3.80,
+          "updatedAt": "2024-03-10T14:25:00Z"
+        }
+      ],
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "name": "Team Total Home",
+      "odds": [
+        {
+          "hdp": 1.5,
+          "over": 1.95,
+          "under": 1.95,
+          "updatedAt": "2024-03-10T14:25:00Z"
+        }
+      ],
+      "updatedAt": "2024-03-10T14:25:00Z"
+    }
+  ],
+  "Pinnacle": [...],
+  "Betfair Exchange": [...]
+}
+```
+
+## Player Props
+
+### Player Market Structure
+
+```json
+{
+  "name": "Player Props",
+  "player_id": 118748,
+  "player_name": "Mohamed Salah",
+  "odds": [
+    {
+      "stat_type": "goals",
+      "hdp": 0.5,
+      "over": 1.90,
+      "under": 2.00,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "stat_type": "shots_on_target",
+      "hdp": 1.5,
+      "over": 2.10,
+      "under": 1.85,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    }
+  ],
+  "updatedAt": "2024-03-10T14:25:00Z"
+}
+```
+
+## Odds Comparison
+
+### Best Odds Structure
+
+```json
+{
+  "market": "Totals",
+  "hdp": 2.5,
+  "side": "over",
+  "best_odds": [
+    {
+      "bookmaker": "Pinnacle",
+      "odds": 2.15,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "bookmaker": "Bet365",
+      "odds": 2.10,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "bookmaker": "William Hill",
+      "odds": 2.05,
+      "updatedAt": "2024-03-10T14:24:00Z"
+    }
+  ]
+}
+```
+
+## Odds Formats
+
+### Decimal Odds (Default)
+
+```json
+{
+  "format": "decimal",
+  "odds": 2.10
+}
+```
+
+### American Odds
+
+```json
+{
+  "format": "american",
+  "odds": "+110"
+}
+```
+
+### Fractional Odds
+
+```json
+{
+  "format": "fractional",
+  "odds": "11/10"
+}
+```
+
+## Odds Conversion
+
+### Convert Decimal to American
+
+```python
+def decimal_to_american(decimal_odds: float) -> str:
+    """Convert decimal odds to American format"""
+    if decimal_odds >= 2.0:
+        american = (decimal_odds - 1) * 100
+        return f"+{int(american)}"
+    else:
+        american = -100 / (decimal_odds - 1)
+        return str(int(american))
+
+# Example
+decimal_to_american(2.10)  # "+110"
+decimal_to_american(1.85)  # "-118"
+```
+
+### Convert Decimal to Fractional
+
+```python
+def decimal_to_fractional(decimal_odds: float) -> str:
+    """Convert decimal odds to fractional format"""
+    from fractions import Fraction
+    fraction = Fraction(decimal_odds - 1).limit_denominator(100)
+    return f"{fraction.numerator}/{fraction.denominator}"
+
+# Example
+decimal_to_fractional(2.10)  # "11/10"
+decimal_to_fractional(3.40)  # "12/5"
+```
+
+## Implied Probability
+
+### Calculate Implied Probability
+
+```python
+def implied_probability(decimal_odds: float) -> float:
+    """Calculate implied probability from decimal odds"""
+    return (1 / decimal_odds) * 100
+
+# Example
+implied_probability(2.10)  # 47.62%
+implied_probability(1.85)  # 54.05%
+```
+
+### Overround Calculation
+
+```python
+def calculate_overround(odds_list: list) -> float:
+    """Calculate bookmaker overround (margin)"""
+    total_implied = sum(1 / odds for odds in odds_list)
+    overround = (total_implied - 1) * 100
+    return overround
+
+# Example (1X2 market)
+calculate_overround([2.10, 3.40, 3.80])  # 5.14%
+```
+
+## Odds History
+
+### Historical Odds Structure
+
+```json
+{
+  "market": "Totals",
+  "hdp": 2.5,
+  "side": "over",
+  "bookmaker": "Bet365",
+  "history": [
+    {
+      "odds": 2.05,
+      "timestamp": "2024-03-09T10:00:00Z"
+    },
+    {
+      "odds": 2.08,
+      "timestamp": "2024-03-09T18:00:00Z"
+    },
+    {
+      "odds": 2.10,
+      "timestamp": "2024-03-10T14:25:00Z"
+    }
+  ]
+}
+```
+
+## References
+
+- Related: [Fixture Model](/api/models/fixture)
+- Related: [Bet Model](/api/models/bet)
+- Related: [Scanner Interface](/api/scanner-interface)
+- Related: [Calculator Interface](/api/calculator-interface)

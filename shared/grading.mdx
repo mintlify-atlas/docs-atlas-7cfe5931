@@ -1,0 +1,383 @@
+---
+title: 'Bet Grading System'
+description: 'Unified bet grading with automated scheduling and result processing'
+icon: 'trophy'
+---
+
+## Overview
+
+The SharedServices grading system provides automated bet grading for both Player Bot and Team Bot. It uses FotMob API for fixture data, supports adaptive scheduling with rate limit backoff, and runs grading and syncing operations in parallel threads.
+
+## Architecture
+
+```python
+SharedServices/grading/
+├── __init__.py                    # Package exports
+├── scheduler/
+│   ├── unified_scheduler.py       # Main scheduler with parallel threads
+│   └── alert_grading_scheduler.py # Legacy scheduler (deprecated)
+├── processors/
+│   ├── immediate_bet_grader.py    # Grade bets for finished fixtures
+│   ├── result_processor.py        # Process all pending alerts
+│   └── alert_result_processor.py  # Legacy processor
+└── runners/
+    └── run_grading_scheduler.py   # Entry point scripts
+```
+
+## Unified Grading Scheduler
+
+The `UnifiedGradingScheduler` is the core component that orchestrates automated grading and syncing.
+
+### Features
+
+- **Parallel Operation**: Runs grading and syncing in separate threads
+- **Adaptive Intervals**: Adjusts polling frequency based on API responses
+- **Rate Limit Handling**: Automatic backoff on 429 errors
+- **Timestamp Rotation**: Ensures all alerts are checked over time
+- **Batch Size Adaptation**: Optimizes sync batch sizes
+
+### Initialization
+
+```python SharedServices/grading/scheduler/unified_scheduler.py
+from PROPPR.SharedServices.grading import UnifiedGradingScheduler
+
+scheduler = UnifiedGradingScheduler(
+    mongo_connection_string="mongodb://localhost:27017/",
+    database_name="Cerebro",
+    api_token="your_api_token",
+    credentials_path="/path/to/credentials.json",
+    spreadsheet_name="PropprBotTracker",
+    bot_type='player',  # or 'team'
+    initial_interval_seconds=300  # 5 minutes
+)
+
+scheduler.start()
+```
+
+### Adaptive Scheduling
+
+The scheduler adjusts intervals based on success/failure:
+
+```python
+# Configuration from shared_config
+DEFAULT_GRADING_INTERVAL = 300  # 5 minutes
+MIN_GRADING_INTERVAL = 60       # 1 minute
+MAX_GRADING_INTERVAL = 3600     # 1 hour
+
+BACKOFF_MULTIPLIER = 2          # Double interval on failure
+SPEEDUP_AFTER_SUCCESSES = 3     # Speed up after 3 successes
+SPEEDUP_DIVISOR = 2             # Halve interval on speedup
+```
+
+**Behavior:**
+- ✅ On success: After 3 consecutive successes, interval is halved (min: 60s)
+- ❌ On rate limit: Interval is doubled (max: 3600s)
+
+### Parallel Threads
+
+The scheduler runs two independent threads:
+
+#### Thread 1: Grading Logic
+
+```python SharedServices/grading/scheduler/unified_scheduler.py
+def run_grading_logic(self) -> bool:
+    """Executes ONLY the grading logic"""
+    try:
+        graded_count = self.result_processor.process_all_alerts()
+        
+        if graded_count > 0:
+            logger.info(f"Graded {graded_count} alerts")
+        
+        return True  # Success
+    except RateLimitException as e:
+        logger.warning(f"Rate limit hit: {e}")
+        return False  # Trigger backoff
+```
+
+#### Thread 2: Syncing Logic
+
+```python SharedServices/grading/scheduler/unified_scheduler.py
+def run_sync_logic(self):
+    """Executes sheet sync logic using Timestamp Rotation"""
+    # 1. Fetch alerts sorted by 'last_sync_check' (oldest first)
+    # 2. Sync to Google Sheets
+    # 3. Update 'last_sync_check' timestamp
+    # 4. Adapt batch size based on rate limits
+```
+
+**Timestamp Rotation** ensures every alert is eventually checked:
+- Alerts are fetched by oldest `last_sync_check` timestamp
+- After syncing, timestamp is updated
+- Next sync cycle processes the next batch of oldest alerts
+
+### Status Monitoring
+
+```python
+status = scheduler.get_status()
+print(status)
+# {
+#     'bot_type': 'player',
+#     'running': True,
+#     'grading_interval': 300,
+#     'last_grade': '2026-03-04T10:15:00',
+#     'last_sync': '2026-03-04T10:16:00',
+#     'sheet_stats': {...}
+# }
+```
+
+## Immediate Bet Grader
+
+The `ImmediateBetGrader` grades bets for fixtures that have already finished. Used when users track bets after the game ends.
+
+### Usage
+
+```python SharedServices/grading/processors/immediate_bet_grader.py
+from PROPPR.SharedServices import ImmediateBetGrader
+
+grader = ImmediateBetGrader(
+    api_token='',  # Deprecated (uses FotMob)
+    bot_type='player'
+)
+
+# Check if fixture is finished
+fixture_data = grader.fetch_fixture_data(fotmob_match_id=12345)
+is_finished = grader.is_fixture_finished(fixture_data)
+
+if is_finished:
+    # Grade the bet
+    graded_bet = grader.grade_bet_from_fixture_data(
+        bet_doc=bet,
+        fixture_data=fixture_data,
+        alert_data=alert
+    )
+    
+    print(f"Result: {graded_bet['status']}")
+    print(f"Actual value: {graded_bet['actual_value']}")
+    print(f"Returns: {graded_bet['returns']}")
+```
+
+### Grading Logic
+
+<Steps>
+  <Step title="Check Fixture Status">
+    Verify the fixture has finished using FotMob status
+  </Step>
+  <Step title="Map Market to API">
+    Use `UnifiedMarketMapper` to get stat_type and api_type_id
+  </Step>
+  <Step title="Extract Actual Value">
+    Get player/team stats from FotMob fixture data
+  </Step>
+  <Step title="Determine Result">
+    Compare actual value with threshold and direction
+  </Step>
+  <Step title="Calculate Returns">
+    Compute returns based on result status and odds
+  </Step>
+</Steps>
+
+### Result Statuses
+
+```python
+# Possible bet result statuses
+'won'        # Bet won
+'lost'       # Bet lost
+'refund'     # Push/refund (exact hit or player didn't play)
+'half_win'   # Asian handicap half win
+'half_loss'  # Asian handicap half loss
+```
+
+### Player Stats Extraction
+
+```python SharedServices/grading/processors/immediate_bet_grader.py
+def _get_player_stat_value(
+    self,
+    fixture_data: Dict,
+    player_name: str,
+    api_type_id: int,
+    stat_type: str
+) -> Optional[float]:
+    """Get player stat value from FotMob fixture data"""
+    # Use FotMob service to get player stats
+    player_stats = self.fotmob.get_player_stats(fixture_data, player_name)
+    
+    if not player_stats:
+        return None
+    
+    # Map stat_type to FotMob key
+    value = player_stats.get(stat_type, 0)
+    
+    return float(value) if value is not None else 0.0
+```
+
+### Refund Scenarios
+
+```python
+# Player didn't play (not in squad)
+if not player_in_squad:
+    return self._grade_as_refund(bet_doc, "not_in_squad")
+
+# Exact threshold hit (push)
+if actual_value == threshold:
+    return "refund"
+```
+
+## Result Processor
+
+The `UnifiedResultProcessor` processes all pending alerts and updates their grading status.
+
+### Features
+
+- **Batch Processing**: Processes alerts in batches
+- **Rate Limit Handling**: Exponential backoff on 429 errors
+- **Result Tracking**: Updates `result_tracking` field in MongoDB
+- **Bot Type Support**: Works for both Player Bot and Team Bot
+
+### Example Usage
+
+```python
+from PROPPR.SharedServices.grading.processors import UnifiedResultProcessor
+
+processor = UnifiedResultProcessor(
+    mongo_uri="mongodb://localhost:27017/",
+    database_name="Cerebro",
+    api_token="your_token",
+    bot_type='player'
+)
+
+# Process all pending alerts
+graded_count = processor.process_all_alerts()
+print(f"Graded {graded_count} alerts")
+```
+
+## Rate Limiting
+
+### Exponential Backoff
+
+```python
+# On RateLimitException
+self.grading_interval = min(
+    self.grading_interval * BACKOFF_MULTIPLIER,
+    MAX_GRADING_INTERVAL
+)
+```
+
+### Batch Size Adaptation
+
+```python
+# Sync batch sizes
+DEFAULT_BATCH_SIZE = 50
+RATE_LIMITED_BATCH_SIZE = 10
+BATCH_SIZE_INCREMENT = 5
+MAX_BATCH_SIZE = 100
+
+# On rate limit
+if rate_limited:
+    self.sync_batch_size = RATE_LIMITED_BATCH_SIZE
+else:
+    # Gradually increase
+    self.sync_batch_size = min(
+        self.sync_batch_size + BATCH_SIZE_INCREMENT,
+        MAX_BATCH_SIZE
+    )
+```
+
+## Google Sheets Integration
+
+Graded alerts are automatically synced to Google Sheets for tracking.
+
+```python
+from PROPPR.SharedServices.sheets.sync import UnifiedSheetsSync
+
+sheets_sync = UnifiedSheetsSync(
+    credentials_path="credentials.json",
+    spreadsheet_name="PropprBotTracker",
+    bot_type='player',
+    collection=mongo_collection,
+    spreadsheet_key="1abc..."
+)
+
+synced_count, rate_limited = sheets_sync.sync_alerts(graded_alerts)
+```
+
+## Factory Functions
+
+```python
+from PROPPR.SharedServices.grading.scheduler import create_scheduler
+
+# Create and start scheduler in one call
+scheduler = create_scheduler(
+    mongo_uri=MONGO_URI,
+    database_name=DATABASE,
+    api_token=API_TOKEN,
+    credentials_path=CREDENTIALS_PATH,
+    spreadsheet_name="PropprBotTracker",
+    bot_type='player'
+)
+
+# Scheduler is already running
+```
+
+## Running Multiple Bots
+
+```python
+# Create schedulers for both bots
+team_scheduler = create_scheduler(
+    mongo_uri=MONGO_URI,
+    database_name=DATABASE,
+    api_token=API_TOKEN,
+    credentials_path=CREDENTIALS_PATH,
+    spreadsheet_name="PropprBotTracker",
+    bot_type='team'
+)
+
+player_scheduler = create_scheduler(
+    mongo_uri=MONGO_URI,
+    database_name=DATABASE,
+    api_token=API_TOKEN,
+    credentials_path=CREDENTIALS_PATH,
+    spreadsheet_name="PropprBotTracker",
+    bot_type='player'
+)
+
+# Both run in parallel
+try:
+    while True:
+        time.sleep(60)
+        print(team_scheduler.get_status())
+        print(player_scheduler.get_status())
+except KeyboardInterrupt:
+    team_scheduler.stop()
+    player_scheduler.stop()
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Adaptive Scheduling">
+    Let the scheduler adjust intervals automatically. Don't force fixed intervals.
+  </Accordion>
+  
+  <Accordion title="Monitor Rate Limits">
+    Watch for `RateLimitException` and ensure backoff is working correctly.
+  </Accordion>
+  
+  <Accordion title="Handle Player Non-Starters">
+    Always check if player was in the squad before grading player bets.
+  </Accordion>
+  
+  <Accordion title="Use Timestamp Rotation">
+    The rotation ensures all alerts are eventually checked without missing any.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Market Mapping" icon="map" href="/shared/mapping">
+    Learn how markets are mapped to API stat types
+  </Card>
+  <Card title="FotMob API" icon="plug" href="/shared/api-clients">
+    Understand the FotMob service integration
+  </Card>
+</CardGroup>

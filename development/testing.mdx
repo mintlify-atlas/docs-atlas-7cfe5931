@@ -1,0 +1,553 @@
+---
+title: 'Testing'
+description: 'Run tests and verify PROPPR functionality'
+keywords: ['testing', 'integration', 'unit tests', 'verification']
+icon: 'flask'
+---
+
+## Overview
+
+PROPPR includes integration tests to verify core functionality, including configuration loading, database connections, and service modules.
+
+---
+
+## Test Structure
+
+Tests are located in the `tests/` directory at the PROPPR root:
+
+```
+PROPPR/
+└── tests/
+    ├── test_shared_services.py      # Config and module import tests
+    ├── test_grading_functional.py   # Grading pipeline functional tests
+    └── test_result_processor.py     # Result processing tests
+```
+
+---
+
+## Running Tests
+
+### Quick Test: Shared Services
+
+Test configuration loading and module imports:
+
+```bash
+python tests/test_shared_services.py
+```
+
+**What it tests:**
+- Configuration imports from `PROPPR.config`
+- Credential loading from `.env`
+- SharedServices module imports
+- Grading system imports
+- MongoDB connection
+
+**Expected output:**
+```
+============================================================
+PROPPR SharedServices Migration Tests
+============================================================
+
+=== Testing Config Imports ===
+✓ Config imports successful
+
+=== Testing Credential Loading ===
+  Environment: DEVELOPMENT
+  MongoDB URI: mongodb+srv://...
+  MongoDB Database: proppr
+✓ Credentials loaded successfully
+
+=== Testing SharedServices Config ===
+  MONGO_DATABASE: proppr
+  DEFAULT_GRADING_INTERVAL: 3600s
+  BOT_CONFIGS keys: ['team', 'player']
+  Player collection: all_positive_alerts
+✓ SharedServices config imports successful
+
+=== Testing Grading Module Imports ===
+  ✓ UnifiedMarketMapper imported
+  ✓ FotMobAPIService imported
+  ✓ UnifiedResultProcessor imported
+  ✓ UnifiedSheetsSync imported
+  ✓ UnifiedGradingScheduler imported
+✓ Grading module imports completed
+
+=== Testing MongoDB Connection ===
+  Connecting to proppr...
+  ✓ MongoDB ping successful
+  Collections found: 23
+  Expected collections present: ['all_positive_alerts', 'all_positive_team_alerts']
+✓ MongoDB connection successful
+
+============================================================
+Test Summary
+============================================================
+  Config Imports: ✓ PASS
+  Credential Loading: ✓ PASS
+  SharedServices Config: ✓ PASS
+  Grading Imports: ✓ PASS
+  MongoDB Connection: ✓ PASS
+
+Total: 5/5 tests passed
+```
+
+---
+
+### Functional Tests: Grading Pipeline
+
+Test the complete grading pipeline with real data:
+
+```bash
+python tests/test_grading_functional.py
+```
+
+**What it tests:**
+- Scheduler initialization with real config
+- Querying ungraded alerts from MongoDB
+- Alert grouping by fixture
+- FotMob API service
+- Market mapping functionality
+- Optional: Full grading cycle (interactive)
+
+<Warning>
+The grading cycle test can modify real data. It prompts for confirmation before running.
+</Warning>
+
+**Expected output:**
+```
+============================================================
+PROPPR SharedServices Functional Tests
+============================================================
+
+=== Test: FotMob API Service ===
+  Service initialized: True
+  Base URL: https://www.fotmob.com/api
+  Has turnstile cookies: True
+  PASS: FotMob service initialized
+
+=== Test: Market Mapper ===
+    Goals (team): type_id=26, location=total
+    Player Goals (player): type_id=95, location=total
+    Corners (team): type_id=41, location=total
+    Shots On Target (player): type_id=82, location=total
+  PASS: Market mapper working
+
+=== Test: Scheduler Initialization ===
+  Bot type: team
+  Config: {'collection': 'all_positive_team_alerts', 'spreadsheet': 'PROPPR Team Bot'}
+  Grading interval: 3600s
+  PASS: Scheduler initialized successfully
+
+=== Test: Query Ungraded Alerts ===
+  Found 42 ungraded alerts
+  Sample alert:
+    - Match: Arsenal vs Chelsea
+    - Market: Goals Over 2.5
+    - Date: 2026-03-04
+    - fixture_id: 12345
+  PASS: Query successful
+
+=== Test: Alert Grouping ===
+  Grouped 42 alerts into 8 fixtures
+    - Fixture 12345: 6 alerts
+    - Fixture 12346: 5 alerts
+    - Fixture 12347: 8 alerts
+  PASS: Grouping successful
+
+=== Test: Grading Cycle (Dry Run) ===
+  NOTE: This will attempt to grade real alerts if any exist
+  Run grading test? (y/n): n
+  SKIP: Grading test skipped by user
+
+============================================================
+Test Summary
+============================================================
+  FotMob Service: PASS
+  Market Mapper: PASS
+  Scheduler Init: PASS
+  Query Alerts: PASS
+  Alert Grouping: PASS
+  Grading Cycle: SKIPPED
+
+Total: 5 passed, 0 failed, 1 skipped
+```
+
+---
+
+## Test Categories
+
+### Configuration Tests
+
+Verify environment and credential loading:
+
+<CodeGroup>
+
+```python Test config imports
+from PROPPR.config import (
+    get_mongo_connection_string,
+    get_mongo_database,
+    get_telegram_token,
+    is_production,
+    is_development,
+)
+
+# Should not raise ImportError
+assert callable(get_mongo_connection_string)
+assert callable(is_production)
+```
+
+```python Test credential loading
+from PROPPR.config import get_mongo_connection_string, get_mongo_database
+
+mongo_uri = get_mongo_connection_string()
+mongo_db = get_mongo_database()
+
+assert mongo_uri, "MongoDB URI should not be empty"
+assert mongo_db, "MongoDB database should not be empty"
+```
+
+</CodeGroup>
+
+### Import Tests
+
+Verify all SharedServices modules can be imported:
+
+```python
+# Market mapping
+from PROPPR.SharedServices.mapping.market_mapper import UnifiedMarketMapper
+
+# API services
+from PROPPR.SharedServices.api.fotmob_service import FotMobAPIService
+
+# Grading system
+from PROPPR.SharedServices.grading.processors.result_processor import UnifiedResultProcessor
+from PROPPR.SharedServices.grading.scheduler.unified_scheduler import UnifiedGradingScheduler
+
+# Sheets sync
+from PROPPR.SharedServices.sheets.sync.sync_service import UnifiedSheetsSync
+```
+
+### Database Tests
+
+Test MongoDB connection and collection access:
+
+```python
+from PROPPR.config import get_mongo_connection_string, get_mongo_database
+from pymongo import MongoClient
+
+uri = get_mongo_connection_string()
+db_name = get_mongo_database()
+
+client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+client.admin.command('ping')  # Should not raise exception
+
+db = client[db_name]
+collections = db.list_collection_names()
+
+assert 'all_positive_alerts' in collections
+assert 'all_positive_team_alerts' in collections
+
+client.close()
+```
+
+### Integration Tests
+
+Test complete workflows:
+
+```python
+from PROPPR.SharedServices.grading.scheduler.unified_scheduler import UnifiedGradingScheduler
+from PROPPR.config import get_mongo_connection_string, get_mongo_database
+
+scheduler = UnifiedGradingScheduler(
+    mongo_connection_string=get_mongo_connection_string(),
+    database_name=get_mongo_database(),
+    api_token="",
+    credentials_path="credentials.json",
+    spreadsheet_name="PROPPR Team Bot",
+    bot_type='team'
+)
+
+# Query ungraded alerts
+alerts = scheduler.result_processor.get_ungraded_alerts()
+assert isinstance(alerts, list)
+
+# Group by fixture
+if alerts:
+    grouped = scheduler.result_processor.group_alerts_by_fixture(alerts[:10])
+    assert isinstance(grouped, dict)
+
+scheduler.result_processor.close()
+```
+
+---
+
+## Manual Testing
+
+### Test Configuration Loading
+
+Quickly verify your `.env` configuration:
+
+```python
+python -c "
+from PROPPR.config import (
+    get_mongo_connection_string,
+    get_mongo_database,
+    get_telegram_token,
+    is_development
+)
+
+print('=== Configuration Test ===')
+print(f'Environment: {'Development' if is_development() else 'Production'}')
+print(f'MongoDB URI: {get_mongo_connection_string()[:50]}...')
+print(f'Database: {get_mongo_database()}')
+print(f'Team Token: {get_telegram_token('team')[:20]}...' if get_telegram_token('team') else 'Team Token: Not set')
+print('✓ All credentials loaded')
+"
+```
+
+### Test Market Mapping
+
+Verify market normalization works correctly:
+
+```python
+python -c "
+from PROPPR.SharedServices.mapping.market_mapper import UnifiedMarketMapper
+
+test_markets = [
+    ('Goals', False),
+    ('Player Goals', True),
+    ('Corners', False),
+    ('Shots On Target', True),
+]
+
+print('=== Market Mapping Test ===')
+for market, is_player in test_markets:
+    mapping = UnifiedMarketMapper.get_market_mapping(market, is_player)
+    if mapping:
+        print(f'{market}: type_id={mapping.get('type_id')}, location={mapping.get('location')}')
+    else:
+        print(f'{market}: No mapping')
+"
+```
+
+### Test Database Query
+
+Verify you can query MongoDB collections:
+
+```python
+python -c "
+from PROPPR.config import get_mongo_connection_string, get_mongo_database
+from pymongo import MongoClient
+
+uri = get_mongo_connection_string()
+db_name = get_mongo_database()
+
+client = MongoClient(uri)
+db = client[db_name]
+
+print('=== Database Query Test ===')
+print(f'Connected to: {db_name}')
+
+# Count documents in key collections
+for collection in ['all_positive_alerts', 'all_positive_team_alerts']:
+    if collection in db.list_collection_names():
+        count = db[collection].count_documents({})
+        print(f'{collection}: {count} documents')
+    else:
+        print(f'{collection}: Not found')
+
+client.close()
+print('✓ Database query successful')
+"
+```
+
+---
+
+## Test Data Requirements
+
+### MongoDB Collections
+
+Tests expect these collections to exist:
+
+- `all_positive_alerts` - Player market alerts
+- `all_positive_team_alerts` - Team market alerts
+- `game_info` - Match information and results
+
+<Info>
+If collections don't exist, the tests will still run but may report zero alerts found. Run the data services (UnifiedAPIPoller, WebsocketUpdater) to populate data.
+</Info>
+
+### Environment Variables
+
+Tests require these environment variables in `.env`:
+
+```bash
+MONGODB_URI_DEVELOPMENT="mongodb://..."
+MONGODB_DATABASE="proppr"
+```
+
+Optional for full grading tests:
+```bash
+FOOTYSTATS_API_KEY="..."
+GOOGLE_SHEET_ID_TEAM="..."
+```
+
+---
+
+## Continuous Integration
+
+While PROPPR doesn't currently use automated CI, you can set up basic checks:
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    pip install -r requirements.txt
+    ```
+  </Step>
+  
+  <Step title="Run import tests">
+    ```bash
+    python tests/test_shared_services.py
+    ```
+  </Step>
+  
+  <Step title="Verify exit code">
+    Tests exit with code 0 on success, 1 on failure:
+    ```bash
+    python tests/test_shared_services.py && echo "Tests passed"
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Common Test Failures
+
+<AccordionGroup>
+  <Accordion title="MongoDB connection failed">
+    **Cause:** MongoDB not running or connection string incorrect.
+    
+    **Solution:**
+    - Check MongoDB is running: `mongosh`
+    - Verify `.env` has correct `MONGODB_URI_DEVELOPMENT`
+    - If using Atlas, check IP whitelist
+  </Accordion>
+  
+  <Accordion title="Config import failed">
+    **Cause:** Python can't find PROPPR module.
+    
+    **Solution:**
+    - Run tests from PROPPR parent directory:
+      ```bash
+      cd /path/to/Cerebro
+      python PROPPR/tests/test_shared_services.py
+      ```
+  </Accordion>
+  
+  <Accordion title="Credentials missing or empty">
+    **Cause:** Required environment variables not set.
+    
+    **Solution:**
+    - Check `.env` exists in PROPPR root
+    - Verify required variables are set:
+      ```bash
+      cat .env | grep MONGODB
+      ```
+    - See [Local Setup](/development/local-setup#environment-configuration)
+  </Accordion>
+  
+  <Accordion title="FotMob service import issue">
+    **Cause:** FotMob service depends on turnstile cookies.
+    
+    **Solution:**
+    - This is a warning, not a failure
+    - Service will still initialize, but may have limited functionality
+    - To fix, ensure `turnstile_cookies.json` exists in PROPPR root
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Writing New Tests
+
+### Test Template
+
+Use this template for new integration tests:
+
+```python test_example.py
+#!/usr/bin/env python3
+"""
+Test script for [feature name]
+Verifies [what it tests]
+"""
+
+import sys
+from pathlib import Path
+
+# Ensure PROPPR parent is in path
+proppr_parent = Path(__file__).resolve().parent.parent.parent
+if str(proppr_parent) not in sys.path:
+    sys.path.insert(0, str(proppr_parent))
+
+def test_feature():
+    """Test specific feature"""
+    print("\n=== Testing Feature ===")
+    try:
+        # Your test code here
+        print("✓ Test passed")
+        return True
+    except Exception as e:
+        print(f"✗ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def main():
+    """Run all tests"""
+    print("=" * 60)
+    print("Test Suite Name")
+    print("=" * 60)
+    
+    results = []
+    results.append(("Feature Test", test_feature()))
+    
+    # Summary
+    print("\n" + "=" * 60)
+    print("Test Summary")
+    print("=" * 60)
+    
+    passed = sum(1 for _, r in results if r)
+    total = len(results)
+    
+    for name, result in results:
+        status = "✓ PASS" if result else "✗ FAIL"
+        print(f"  {name}: {status}")
+    
+    print(f"\nTotal: {passed}/{total} tests passed")
+    return passed == total
+
+if __name__ == '__main__':
+    success = main()
+    sys.exit(0 if success else 1)
+```
+
+### Best Practices
+
+<Check>Always set up Python path correctly for imports</Check>
+<Check>Handle exceptions and print detailed error messages</Check>
+<Check>Return boolean success/failure for each test</Check>
+<Check>Exit with appropriate exit codes (0 = success, 1 = failure)</Check>
+<Check>Print clear test progress and summary</Check>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Local Setup" icon="laptop-code" href="/development/local-setup">
+    Set up your development environment
+  </Card>
+  <Card title="Running Locally" icon="play" href="/development/running-locally">
+    Learn how to run services locally
+  </Card>
+</CardGroup>

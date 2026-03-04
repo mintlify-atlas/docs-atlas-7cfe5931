@@ -1,0 +1,517 @@
+---
+title: 'EV Bot'
+description: 'Sharp odds-based value bet detection across all sports'
+icon: 'chart-line'
+---
+
+## Overview
+
+The **Proppr EV Bot** monitors odds-api.io for value betting opportunities by comparing soft bookmaker odds against sharp bookmaker (pinnacle-like) odds across 100+ sports and markets worldwide.
+
+## Purpose
+
+EV Bot identifies positive expected value (+EV) bets by finding discrepancies between recreational bookmakers (Bet365, William Hill, etc.) and sharp bookmakers (M88, FB Sports). When soft books offer better odds than sharp books, there's an opportunity for profit.
+
+## Markets Covered
+
+EV Bot supports **all markets available through odds-api.io**:
+
+### Soccer/Football
+- Match Result (1X2, Moneyline)
+- Over/Under Goals
+- Asian Handicap
+- Both Teams To Score
+- Double Chance
+- Draw No Bet
+- First/Last Goal
+- Half Time/Full Time
+- Corners
+- Cards
+- Player Props
+
+### American Sports
+- NFL: Spreads, Totals, Moneyline, Props
+- NBA: Spreads, Totals, Moneyline, Player Props  
+- MLB: Moneyline, Run Line, Totals
+- NHL: Puck Line, Totals, Moneyline
+- College Sports (NCAAF, NCAAB)
+
+### Other Sports
+- Tennis: Match Winner, Set Betting, Games Handicap
+- Basketball: Spreads, Totals, Moneyline
+- Ice Hockey: Puck Line, Totals, Moneyline
+- eSports: Match Winner, Map Handicap, Totals
+- Boxing/MMA: Fight Winner, Method of Victory
+
+<Info>
+EV Bot is sport-agnostic and supports any sport/market combination available in the odds-api.io feed.
+</Info>
+
+## Alert Criteria
+
+Alerts are sent when:
+
+1. **EV Threshold**: Expected value exceeds minimum (default 3%)
+2. **Odds Range**: Odds within user's min/max (default 1.50-10.0)
+3. **Sharp Odds Available**: Sharp bookmaker has odds for comparison
+4. **Market Limit**: User hasn't exceeded daily/hourly alert limits
+5. **Time Window**: Match starts within configured time range (default 24h)
+6. **Movement Check**: Line hasn't moved significantly against the bet
+
+### EV Calculation
+
+```python
+# From ev_bot.py:500-550
+def calculate_expected_value(soft_odds, sharp_odds):
+    """
+    Calculate EV using sharp odds as true probability estimate.
+    
+    Formula:
+    - Implied probability from sharp odds = 1 / sharp_odds
+    - Expected value = (soft_odds / sharp_odds) - 1
+    - EV% = EV * 100
+    
+    Example:
+    - Sharp odds: 2.00 (50% probability)
+    - Soft odds: 2.20
+    - EV = (2.20 / 2.00) - 1 = 0.10 = 10%
+    """
+    if not sharp_odds or sharp_odds <= 1.0:
+        return None
+    
+    ev_decimal = (soft_odds / sharp_odds) - 1
+    ev_percent = ev_decimal * 100
+    
+    return ev_percent
+
+# Sharp bookmakers used as baseline
+SHARP_BOOKMAKERS = ["M88", "FB Sports", "Pinnacle"]
+
+# Excluded from soft bookmaker list
+EXCLUDED_BOOKMAKERS = [
+    "Sharp",              # Fair odds baseline
+    "Betfair Exchange",  # Exchange, not bookmaker
+    "Overtime"           # Crypto-only, separate bot
+]
+```
+
+## User Commands
+
+<CodeGroup>
+
+```bash /start
+Initialize bot and show welcome message
+```
+
+```bash /settings
+Configure EV thresholds, odds ranges, and bookmakers
+```
+
+```bash /sports
+Select which sports to receive alerts for
+```
+
+```bash /leagues
+Choose specific leagues within each sport
+```
+
+```bash /bookmakers
+Enable/disable specific bookmakers
+```
+
+```bash /limits
+Set daily/hourly alert limits
+```
+
+```bash /mute [hours]
+Temporarily disable alerts for specified hours
+```
+
+```bash /stats
+View your betting statistics and ROI
+```
+
+```bash /help
+Display all available commands
+```
+
+</CodeGroup>
+
+## Configuration Options
+
+### EV Thresholds
+
+```python
+# Default configuration
+user_settings = {
+    "min_ev_percent": 3.0,      # Minimum EV to trigger alert
+    "max_ev_percent": 100.0,    # Maximum EV (filter outliers)
+    "min_odds": 1.50,           # Minimum acceptable odds
+    "max_odds": 10.0,           # Maximum acceptable odds
+    "min_sharp_odds": 1.40,     # Minimum sharp odds
+    "min_market_limit": 500     # Minimum market limit (USD)
+}
+```
+
+### Time Windows
+
+```python
+# Match timing filters
+timing_settings = {
+    "hours_before_match": 24,    # Only matches in next 24h
+    "min_hours_before": 1,       # Skip matches starting in <1h
+    "include_live": False        # Skip in-play matches
+}
+```
+
+### Line Movement Filtering
+
+```python
+# From ev_bot.py:461-500
+def is_line_movement_favorable(market_name, bet_side, previous_hdp, current_hdp):
+    """
+    Check if line movement is favorable for the bet.
+    
+    Totals:
+    - Line increases (3.5 -> 3.75): Favorable for Over
+    - Line decreases (3.5 -> 3.25): Favorable for Under
+    
+    Spreads:
+    - Positive handicap increases (+1.0 -> +1.5): Unfavorable
+    - Negative handicap increases (-0.5 -> -0.75): Favorable
+    """
+    market_lower = market_name.lower()
+    side_lower = bet_side.lower()
+    
+    # Totals markets
+    if 'total' in market_lower or 'goals' in market_lower:
+        line_increased = current_hdp > previous_hdp
+        
+        if side_lower == 'over':
+            return line_increased  # Higher line = harder to hit = better value
+        elif side_lower == 'under':
+            return not line_increased  # Lower line = easier to hit = better value
+    
+    # Spread markets
+    elif 'spread' in market_lower or 'handicap' in market_lower:
+        if previous_hdp >= 0:  # Positive handicap
+            # Decrease is favorable (team getting more points)
+            return current_hdp < previous_hdp
+        else:  # Negative handicap  
+            # Increase is favorable (team giving fewer points)
+            return current_hdp > previous_hdp
+    
+    return True  # Unknown market, allow by default
+```
+
+## Real Code Examples
+
+### Alert Processing Pipeline
+
+```python
+# From ev_bot.py:700-800
+def process_value_bets():
+    """
+    Main processing loop:
+    1. Fetch odds from API
+    2. Calculate EV for each market/bookmaker combination
+    3. Filter by user settings
+    4. Check for duplicates
+    5. Format and send alerts
+    """
+    try:
+        # Fetch current odds from odds-api.io
+        response = requests.get(
+            ODDS_API_BASE_URL,
+            params={
+                "apiKey": API_KEY,
+                "bookmaker": "Bet365",  # Target bookmaker
+                "includeEventDetails": "true"
+            },
+            timeout=30
+        )
+        odds_data = response.json()
+        
+        value_bets = []
+        
+        for event in odds_data.get('data', []):
+            event_id = event['id']
+            
+            # Check if sharp odds available
+            sharp_odds = get_sharp_odds(event_id)
+            if not sharp_odds:
+                continue
+            
+            # Calculate EV for each market
+            for market in event.get('markets', []):
+                market_name = market['name']
+                
+                for bookmaker in market.get('bookmakers', []):
+                    if is_excluded_bookmaker(bookmaker):
+                        continue
+                    
+                    for outcome in bookmaker.get('odds', []):
+                        soft_odds = outcome['price']
+                        sharp_price = sharp_odds.get(market_name, {}).get(outcome['name'])
+                        
+                        if not sharp_price:
+                            continue
+                        
+                        ev_pct = calculate_expected_value(soft_odds, sharp_price)
+                        
+                        if ev_pct and ev_pct >= MIN_EV_THRESHOLD:
+                            value_bets.append({
+                                'event_id': event_id,
+                                'event_name': event['name'],
+                                'market_name': market_name,
+                                'bookmaker': bookmaker['name'],
+                                'bet_side': outcome['name'],
+                                'soft_odds': soft_odds,
+                                'sharp_odds': sharp_price,
+                                'ev_percent': ev_pct,
+                                'match_date': event['commence_time']
+                            })
+        
+        # Send alerts to users
+        send_value_bet_alerts(value_bets)
+        
+    except Exception as e:
+        logger.error(f"Error processing value bets: {e}")
+```
+
+### Alert Deduplication
+
+```python
+# From ev_bot.py:332-458
+def is_ev_alert_already_sent(user_id, alert_data, bot_name):
+    """
+    Check if this EV alert has already been sent.
+    Allows resends if sharp odds improve (decrease).
+    
+    Uses ev_sent_alerts collection for reliable deduplication.
+    """
+    try:
+        event_id = alert_data.get('event_id', '')
+        market_name = alert_data.get('market_name', '')
+        bet_side = alert_data.get('bet_side', '')
+        bookmaker = alert_data.get('bookmaker', '')
+        
+        # Generate unique alert key
+        alert_key = generate_ev_alert_key(
+            event_id, market_name, bet_side, bookmaker
+        )
+        
+        # Check if sent before
+        existing = ev_sent_alerts_collection.find_one({
+            "user_id": user_id,
+            "alert_key": alert_key,
+            "bot_name": bot_name
+        })
+        
+        if not existing:
+            return False  # Never sent, allow
+        
+        # Check if sharp odds improved
+        current_sharp = alert_data.get('sharp_odds', {}).get(bet_side)
+        previous_sharp = existing.get('sharp_odds', {}).get(bet_side)
+        
+        if current_sharp and previous_sharp:
+            try:
+                current_val = float(current_sharp)
+                previous_val = float(previous_sharp)
+                
+                # If sharp odds decreased (improved), allow resend
+                if current_val < previous_val:
+                    logger.info(
+                        f"Sharp odds improved: {previous_val:.3f} -> {current_val:.3f}, "
+                        f"allowing resend for user {user_id}"
+                    )
+                    return False  # Allow resend
+            except (ValueError, TypeError):
+                pass
+        
+        return True  # Already sent, no improvement
+        
+    except Exception as e:
+        logger.error(f"Error checking alert sent status: {e}")
+        return False  # Fail open
+
+
+def generate_ev_alert_key(event_id, market_name, bet_side, bookmaker):
+    """
+    Generate consistent key for deduplication.
+    Independent of handicap/line to prevent duplicate sends on line moves.
+    """
+    return f"{event_id}|{market_name.lower()}|{bet_side.lower()}|{bookmaker.lower()}"
+```
+
+### Multi-Bot Architecture
+
+```python
+# From value_bet_config.py:6-21
+BOT_TOKENS = {
+    "main_leagues": "...",        # Top European leagues
+    "small_leagues": "...",       # Lower tier leagues
+    "us_props": "...",            # American sports props
+    "asia": "...",                # Asian leagues
+    "youth_football": "...",      # Youth competitions
+    "non_football": "...",        # Tennis, basketball, etc.
+    "fan_funded": "...",          # Community-funded leagues
+    "esports": "...",             # eSports
+    "american_sports": "...",     # NFL, NBA, MLB, NHL
+    "corners_cards": "...",       # Cards/corners specialists
+    "player_profit": "...",       # Player Profit platform
+    "funded_sports_trader": "..." # Funded trader program
+}
+
+# Each bot filters by specific leagues/sports
+MAIN_LEAGUES = [
+    "England - Premier League",
+    "Spain - La Liga",
+    "Italy - Serie A",
+    "Germany - Bundesliga",
+    "France - Ligue 1",
+    # ... 200+ main leagues
+]
+```
+
+### Stake Calculation
+
+```python
+# From ev_bot.py:900-950
+def calculate_stake(user_settings, ev_percent, odds, bankroll):
+    """
+    Calculate recommended stake using Kelly Criterion or flat staking.
+    
+    Kelly Criterion:
+    - stake% = (probability * odds - 1) / (odds - 1)
+    - Use fractional Kelly (e.g., 25%) for safety
+    
+    Flat Staking:
+    - stake = fixed percentage of bankroll
+    """
+    stake_method = user_settings.get('stake_method', 'flat')
+    
+    if stake_method == 'kelly':
+        # Calculate Kelly stake
+        sharp_probability = 1 / sharp_odds
+        kelly_fraction = user_settings.get('kelly_fraction', 0.25)
+        
+        kelly_stake_pct = (
+            (sharp_probability * odds - 1) / (odds - 1)
+        ) * kelly_fraction
+        
+        # Cap at max stake percentage
+        max_stake_pct = user_settings.get('max_stake_pct', 5.0)
+        stake_pct = min(kelly_stake_pct * 100, max_stake_pct)
+        
+        stake = bankroll * (stake_pct / 100)
+        
+    else:  # Flat staking
+        flat_stake_pct = user_settings.get('flat_stake_pct', 2.0)
+        stake = bankroll * (flat_stake_pct / 100)
+    
+    return round(stake, 2)
+```
+
+## Database Collections
+
+- **`all_value_bets`**: All detected value bets (with TTL)
+- **`value_bet_alerts`**: Alerts sent to users
+- **`user_settings`**: Per-user configurations
+- **`universal_user_settings`**: Cross-bot settings
+- **`ev_sent_alerts`**: Deduplication tracking
+- **`odds_history`**: Historical odds for movement analysis
+- **`league_market_averages`**: Market liquidity data
+- **`discovered_bookmakers`**: Auto-discovered bookmakers
+
+## Bot Specializations
+
+EV Bot runs as **12 specialized bots**, each focusing on specific sports/leagues:
+
+### Main Leagues Bot
+- Top European football leagues
+- Champions League, Europa League
+- World Cup, Euros, major tournaments
+
+### Small Leagues Bot  
+- Lower tier European leagues
+- Regional championships
+- Secondary divisions
+
+### American Sports Bot
+- NFL, NBA, MLB, NHL
+- College football and basketball
+- Player props
+
+### Asia Bot
+- Asian leagues (China, Japan, Korea)
+- AFC Champions League
+- SEA competitions
+
+### eSports Bot
+- CS2, Dota 2, League of Legends
+- Valorant, Starcraft
+- Major tournaments
+
+### Non-Football Bot
+- Tennis, Basketball, Ice Hockey
+- Boxing, MMA
+- Other sports
+
+<Card title="Complete Bot List" icon="list">
+  See `BOT_TOKENS` in `/home/daytona/workspace/source/PropprEVBot/config/value_bet_config.py:6-21`
+</Card>
+
+## API Integration
+
+```python
+# From ev_bot.py:201-208
+ODDS_API_BASE_URL = "https://api.odds-api.io/v3/value-bets"
+API_PARAMS = {
+    "apiKey": API_KEY,
+    "bookmaker": "Bet365",
+    "includeEventDetails": "true"
+}
+
+# Rate limiting: 5000 requests/hour on main key
+# Batching: Minimum 7 fixtures per request
+MIN_BATCH_SIZE = 7
+```
+
+## Technical Architecture
+
+```
+PropprEVBot/
+├── core/
+│   ├── bot/
+│   │   └── ev_bot.py              # Main bot logic
+│   ├── ev_calculator/
+│   │   └── calculator.py          # EV calculations
+│   └── alert_validation.py        # Alert filtering
+├── config/
+│   ├── constants.py
+│   └── value_bet_config.py        # Bot specializations
+└── services/
+    ├── pinnacle/                   # Sharp odds fetching
+    └── telegram/
+        └── handlers/               # Command handlers
+```
+
+<Card title="Source Code" icon="code" href="https://github.com/yourusername/PROPPR/tree/main/PropprEVBot">
+  View the complete EV Bot implementation
+</Card>
+
+## Related Bots
+
+<CardGroup cols={2}>
+  <Card title="Team Bot" icon="users" href="/bots/team-bot">
+    Statistical team market alerts
+  </Card>
+  <Card title="Player Bot" icon="user" href="/bots/player-bot">
+    Statistical player prop alerts
+  </Card>
+  <Card title="Arb Bot" icon="arrows-split-up-and-left" href="/bots/arb-bot">
+    Arbitrage betting opportunities
+  </Card>
+</CardGroup>

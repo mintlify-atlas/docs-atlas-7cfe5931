@@ -1,0 +1,507 @@
+---
+title: 'Bet Model'
+description: 'Bet tracking and arbitrage bet data structures'
+icon: 'file-invoice-dollar'
+---
+
+## Overview
+
+The Bet Model defines data structures for tracked bets and arbitrage opportunities in the PROPPR platform.
+
+## Tracked Bet Document
+
+### Schema
+
+<ParamField path="bet_id" type="string" required>
+  Unique bet tracking ID (ObjectId string)
+</ParamField>
+
+<ParamField path="alert_id" type="string">
+  Reference to original alert
+</ParamField>
+
+<ParamField path="tracked_at" type="datetime" required>
+  Timestamp when bet was tracked
+</ParamField>
+
+<ParamField path="player_name" type="string">
+  Player name (Player Bot only)
+</ParamField>
+
+<ParamField path="player_id" type="integer">
+  Player ID (Player Bot only)
+</ParamField>
+
+<ParamField path="team" type="string">
+  Team name
+</ParamField>
+
+<ParamField path="team_id" type="integer">
+  Team ID
+</ParamField>
+
+<ParamField path="market" type="string" required>
+  Betting market (e.g., "Player Shots On Target")
+</ParamField>
+
+<ParamField path="match" type="string" required>
+  Match name (e.g., "Liverpool vs Man City")
+</ParamField>
+
+<ParamField path="date" type="string">
+  Match date (YYYY-MM-DD)
+</ParamField>
+
+<ParamField path="time" type="string">
+  Match time (HH:MM)
+</ParamField>
+
+<ParamField path="threshold" type="float">
+  Market threshold (e.g., 1.5)
+</ParamField>
+
+<ParamField path="market_direction" type="string">
+  "over" or "under"
+</ParamField>
+
+<ParamField path="bookmaker" type="string">
+  Bookmaker name
+</ParamField>
+
+<ParamField path="odds" type="float" required>
+  Decimal odds
+</ParamField>
+
+<ParamField path="actual_stake" type="float" required>
+  Actual stake in currency
+</ParamField>
+
+<ParamField path="unit_size" type="float" required>
+  User's unit size
+</ParamField>
+
+<ParamField path="units_staked" type="float" required>
+  Stake in units
+</ParamField>
+
+<ParamField path="status" type="string" default="pending">
+  "pending", "won", "lost", "refund", "half_win", "half_loss"
+</ParamField>
+
+<ParamField path="manual_override" type="boolean" default="false">
+  If true, bet was manually graded (protected from auto-grading)
+</ParamField>
+
+<ParamField path="returns" type="float" default="0.0">
+  Total return amount
+</ParamField>
+
+<ParamField path="profit_loss" type="float" default="0.0">
+  Profit or loss amount
+</ParamField>
+
+<ParamField path="fixture_id" type="integer">
+  Fixture/match ID
+</ParamField>
+
+<ParamField path="settled_at" type="datetime">
+  Timestamp when bet was settled
+</ParamField>
+
+<ParamField path="actual_value" type="float">
+  Actual statistic value from match
+</ParamField>
+
+<ParamField path="result_tracking" type="object">
+  Result tracking metadata for auto-grading
+</ParamField>
+
+### Result Tracking Object
+
+<ParamField path="result_tracking.api_type_id" type="integer">
+  API type ID for statistic
+</ParamField>
+
+<ParamField path="result_tracking.api_location" type="string">
+  "home", "away", "total", or "player"
+</ParamField>
+
+<ParamField path="result_tracking.stat_type" type="string">
+  Stat type (e.g., "shots_on_target", "goals")
+</ParamField>
+
+<ParamField path="result_tracking.expected_threshold" type="float">
+  Expected threshold value
+</ParamField>
+
+<ParamField path="result_tracking.market_direction" type="string">
+  "over" or "under"
+</ParamField>
+
+<ParamField path="result_tracking.result_status" type="string">
+  "pending", "won", "lost", "refund", "half_win", "half_loss"
+</ParamField>
+
+<ParamField path="result_tracking.actual_value" type="float">
+  Actual value from grading
+</ParamField>
+
+<ParamField path="result_tracking.graded_at" type="datetime">
+  Grading timestamp
+</ParamField>
+
+### Example Document
+
+```json
+{
+  "bet_id": "65f3b2c4e5f6a7b8c9d0e1f2",
+  "alert_id": "12345|67890|Player Shots On Target|last5|Bet365",
+  "tracked_at": "2024-03-10T14:30:00Z",
+  "player_name": "Mohamed Salah",
+  "player_id": 118748,
+  "team": "Liverpool",
+  "team_id": 55,
+  "market": "Player Shots On Target",
+  "match": "Liverpool vs Manchester City",
+  "date": "2024-03-10",
+  "time": "16:30",
+  "threshold": 1.5,
+  "market_direction": "over",
+  "bookmaker": "Bet365",
+  "odds": 2.10,
+  "actual_stake": 10.0,
+  "unit_size": 10.0,
+  "units_staked": 1.0,
+  "status": "won",
+  "manual_override": false,
+  "returns": 21.0,
+  "profit_loss": 11.0,
+  "fixture_id": 19245678,
+  "settled_at": "2024-03-10T18:45:00Z",
+  "actual_value": 3.0,
+  "result_tracking": {
+    "api_type_id": 86,
+    "api_location": "player",
+    "stat_type": "shots_on_target",
+    "expected_threshold": 1.5,
+    "market_direction": "over",
+    "result_status": "won",
+    "actual_value": 3.0,
+    "graded_at": "2024-03-10T18:45:00Z"
+  }
+}
+```
+
+## Arbitrage Bet Document
+
+### Schema
+
+<ParamField path="id" type="string" required>
+  Unique arbitrage ID
+</ParamField>
+
+<ParamField path="eventId" type="integer" required>
+  Event/fixture ID
+</ParamField>
+
+<ParamField path="profitMargin" type="float" required>
+  Profit margin percentage
+</ParamField>
+
+<ParamField path="totalStake" type="float" required>
+  Total stake amount
+</ParamField>
+
+<ParamField path="market" type="object" required>
+  Market details
+</ParamField>
+
+<ParamField path="legs" type="array" required>
+  Array of bet legs (minimum 2)
+</ParamField>
+
+<ParamField path="event" type="object" required>
+  Event/fixture details
+</ParamField>
+
+<ParamField path="created_at" type="datetime">
+  Creation timestamp
+</ParamField>
+
+<ParamField path="expires_at" type="datetime">
+  Expiration timestamp
+</ParamField>
+
+<ParamField path="sport" type="string">
+  Sport name
+</ParamField>
+
+<ParamField path="league" type="string">
+  League name
+</ParamField>
+
+### Market Object
+
+<ParamField path="market.name" type="string" required>
+  Market name (e.g., "Totals", "Moneyline")
+</ParamField>
+
+<ParamField path="market.hdp" type="float">
+  Handicap value (e.g., 2.5)
+</ParamField>
+
+<ParamField path="market.totals_stat" type="string">
+  Stat type for totals (e.g., "goals", "points")
+</ParamField>
+
+### Leg Object
+
+<ParamField path="legs[].bookmaker" type="string" required>
+  Bookmaker name
+</ParamField>
+
+<ParamField path="legs[].side" type="string" required>
+  Bet side ("over", "under", "home", "away", "draw")
+</ParamField>
+
+<ParamField path="legs[].odds" type="string" required>
+  Decimal odds as string
+</ParamField>
+
+<ParamField path="legs[].is_lay" type="boolean" default="false">
+  Whether this is a LAY bet (exchange)
+</ParamField>
+
+<ParamField path="legs[].market_name" type="string">
+  Market name for this leg
+</ParamField>
+
+<ParamField path="legs[].hdp" type="float">
+  Handicap for this leg
+</ParamField>
+
+<ParamField path="legs[].updatedAt" type="string">
+  Last odds update timestamp
+</ParamField>
+
+### Event Object
+
+<ParamField path="event.home" type="string" required>
+  Home team name
+</ParamField>
+
+<ParamField path="event.away" type="string" required>
+  Away team name
+</ParamField>
+
+<ParamField path="event.date" type="string" required>
+  Event date/time (ISO 8601)
+</ParamField>
+
+<ParamField path="event.sport" type="string" required>
+  Sport name
+</ParamField>
+
+<ParamField path="event.league" type="string" required>
+  League name
+</ParamField>
+
+### Example: Standard Arbitrage
+
+```json
+{
+  "id": "arb_12345",
+  "eventId": 19245678,
+  "profitMargin": 3.73,
+  "totalStake": 100.0,
+  "market": {
+    "name": "Totals",
+    "hdp": 2.5
+  },
+  "legs": [
+    {
+      "bookmaker": "Bet365",
+      "side": "over",
+      "odds": "2.10",
+      "is_lay": false,
+      "market_name": "Totals",
+      "hdp": 2.5,
+      "updatedAt": "2024-03-10T14:25:00Z"
+    },
+    {
+      "bookmaker": "Pinnacle",
+      "side": "under",
+      "odds": "2.05",
+      "is_lay": false,
+      "market_name": "Totals",
+      "hdp": 2.5,
+      "updatedAt": "2024-03-10T14:26:00Z"
+    }
+  ],
+  "event": {
+    "home": "Liverpool",
+    "away": "Manchester City",
+    "date": "2024-03-10T16:30:00Z",
+    "sport": "Football",
+    "league": "England - Premier League"
+  },
+  "created_at": "2024-03-10T14:27:00Z",
+  "expires_at": "2024-03-10T16:30:00Z"
+}
+```
+
+### Example: LAY Arbitrage
+
+```json
+{
+  "id": "lay_arb_67890",
+  "eventId": 19245678,
+  "profitMargin": 2.45,
+  "totalStake": 100.0,
+  "market": {
+    "name": "Totals",
+    "hdp": 2.5
+  },
+  "legs": [
+    {
+      "bookmaker": "Bet365",
+      "side": "over",
+      "odds": "2.10",
+      "is_lay": false
+    },
+    {
+      "bookmaker": "Betfair Exchange",
+      "side": "over",
+      "odds": "2.15",
+      "is_lay": true,
+      "lay_stake": 46.51,
+      "liability": 53.49,
+      "commission": 2.0
+    }
+  ],
+  "event": {
+    "home": "Liverpool",
+    "away": "Manchester City",
+    "date": "2024-03-10T16:30:00Z",
+    "sport": "Football",
+    "league": "England - Premier League"
+  },
+  "is_lay_arb": true,
+  "exchange_commission": 2.0
+}
+```
+
+## User Bets Collection
+
+### Schema
+
+<ParamField path="user_id" type="integer" required>
+  Telegram user ID
+</ParamField>
+
+<ParamField path="bets" type="array" required>
+  Array of tracked bet documents
+</ParamField>
+
+<ParamField path="created_at" type="datetime">
+  User document creation timestamp
+</ParamField>
+
+<ParamField path="last_updated" type="datetime">
+  Last update timestamp
+</ParamField>
+
+<ParamField path="unit_size" type="float">
+  User's current unit size
+</ParamField>
+
+<ParamField path="username" type="string">
+  Telegram username
+</ParamField>
+
+### Example Document
+
+```json
+{
+  "user_id": 123456789,
+  "username": "john_doe",
+  "unit_size": 10.0,
+  "created_at": "2024-01-15T10:00:00Z",
+  "last_updated": "2024-03-10T18:45:00Z",
+  "bets": [
+    {
+      "bet_id": "65f3b2c4e5f6a7b8c9d0e1f2",
+      "market": "Player Shots On Target",
+      "player_name": "Mohamed Salah",
+      "status": "won",
+      "odds": 2.10,
+      "units_staked": 1.0,
+      "returns": 21.0,
+      "profit_loss": 11.0
+    }
+  ]
+}
+```
+
+## Status Enums
+
+### Bet Status
+
+- `pending` - Awaiting result
+- `won` - Bet won
+- `lost` - Bet lost
+- `refund` - Bet refunded (push)
+- `half_win` - Half stake won (Asian handicap)
+- `half_loss` - Half stake lost (Asian handicap)
+
+### Market Direction
+
+- `over` - Over threshold
+- `under` - Under threshold
+
+### Bet Sides
+
+- `over` - Over (totals)
+- `under` - Under (totals)
+- `home` - Home team
+- `away` - Away team
+- `draw` - Draw
+- `yes` - Yes
+- `no` - No
+
+## Indexes
+
+### Tracked Bets Collection
+
+```javascript
+// User lookup
+db.user_tracked_bets.createIndex({ "user_id": 1 }, { unique: true })
+
+// Bet ID lookup
+db.user_tracked_bets.createIndex({ "bets.bet_id": 1 })
+
+// Status filtering
+db.user_tracked_bets.createIndex({ "bets.status": 1 })
+```
+
+### Arbitrage Bets Collection
+
+```javascript
+// Expiration cleanup
+db.arbitrage_bets.createIndex({ "expires_at": 1 })
+
+// Event lookup
+db.arbitrage_bets.createIndex({ "eventId": 1 })
+
+// Sport filtering
+db.arbitrage_bets.createIndex({ "sport": 1 })
+
+// League filtering
+db.arbitrage_bets.createIndex({ "league": 1 })
+```
+
+## References
+
+- Related: [Tracking API](/api/tracking-api)
+- Related: [Grading API](/api/grading-api)
+- Related: [Calculator Interface](/api/calculator-interface)

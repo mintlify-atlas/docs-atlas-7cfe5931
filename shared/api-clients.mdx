@@ -1,0 +1,448 @@
+---
+title: 'API Clients'
+description: 'Integrated clients for FotMob, Oddschecker, Overtime, and Betfair'
+icon: 'plug'
+---
+
+## Overview
+
+SharedServices provides integrated API clients for external betting data providers. These clients handle authentication, rate limiting, data transformation, and error handling.
+
+## Available Clients
+
+<CardGroup cols={2}>
+  <Card title="FotMob" icon="futbol">
+    Live match data, player stats, and fixture details
+  </Card>
+  <Card title="Oddschecker" icon="chart-bar">
+    Odds comparison and market data scraping
+  </Card>
+  <Card title="Overtime" icon="coins">
+    Decentralized betting markets on Optimism
+  </Card>
+  <Card title="Betfair" icon="arrows-left-right">
+    Exchange liquidity and market depth
+  </Card>
+</CardGroup>
+
+## FotMob API Client
+
+FotMob is the primary data source for fixture data, player stats, and match results. It replaced SportMonks API.
+
+### Features
+
+- **Cloudflare Bypass**: Uses turnstile cookies for authentication
+- **HTML Scraping**: Fallback to HTML parsing when API is blocked
+- **Circuit Breaker**: Prevents hammering API when cookies expire
+- **Auto Cookie Refresh**: Attempts to refresh expired cookies
+- **Rate Limiting**: Built-in request throttling
+
+### Initialization
+
+```python SharedServices/api/fotmob_service.py
+from PROPPR.SharedServices.api import get_fotmob_service
+
+# Get singleton instance
+fotmob = get_fotmob_service()
+
+# Or create new instance
+from PROPPR.SharedServices.api.fotmob_service import FotMobAPIService
+fotmob = FotMobAPIService(ccode3='GBR')
+```
+
+### Search
+
+```python
+# Search for teams, players, or matches
+results = fotmob.search("Liverpool")
+
+print(results['squads'])  # Teams
+print(results['players'])  # Players
+print(results['matches'])  # Matches
+```
+
+### Get Match Details
+
+```python
+# Fetch match/fixture details
+match_data = fotmob.get_match(match_id=4193490)
+
+if match_data:
+    general = match_data.get('general', {})
+    home_team = general.get('homeTeam', {}).get('name')
+    away_team = general.get('awayTeam', {}).get('name')
+    
+    print(f"{home_team} vs {away_team}")
+```
+
+### Check Fixture Status
+
+```python
+# Check if fixture is finished
+is_finished = fotmob.is_fixture_finished(match_data)
+
+if is_finished:
+    print("Match has ended")
+```
+
+### Get Player Stats
+
+```python
+# Extract player stats from match
+player_stats = fotmob.get_player_stats(
+    match_data=match_data,
+    player_name="Mohamed Salah"
+)
+
+if player_stats:
+    print(f"Goals: {player_stats.get('goals', 0)}")
+    print(f"Assists: {player_stats.get('assists', 0)}")
+    print(f"Shots: {player_stats.get('shots', 0)}")
+    print(f"Shots on target: {player_stats.get('shots_on_target', 0)}")
+```
+
+### Get Team Stats
+
+```python
+# Extract team stats from match
+team_stats = fotmob.get_team_stats(
+    match_data=match_data,
+    team_name="Liverpool"
+)
+
+if team_stats:
+    stats = team_stats.get('stats', {})
+    print(f"Goals: {stats.get('goals', 0)}")
+    print(f"Corners: {stats.get('corners', 0)}")
+    print(f"Shots: {stats.get('shots', 0)}")
+    print(f"Yellow cards: {stats.get('yellow_cards', 0)}")
+```
+
+### Get Team Squad
+
+```python
+# Fetch team squad/roster
+squad = fotmob.get_team_squad(team_id=8650)
+
+for player in squad:
+    print(f"{player['name']} - {player['position']}")
+```
+
+### Turnstile Cookie Management
+
+FotMob uses Cloudflare Turnstile for protection. The client manages cookies automatically:
+
+```python
+# Cookies are loaded from JSON file
+# Path resolution order:
+# 1. PROPPR config path (production/development)
+# 2. /opt/proppr/turnstile_cookies.json
+# 3. /opt/Shared_Services/turnstile_cookies.json (legacy)
+# 4. ./turnstile_cookies.json (same directory)
+
+# Manual cookie refresh
+success = fotmob._refresh_turnstile_cookies()
+
+if success:
+    print("Cookies refreshed successfully")
+```
+
+### Circuit Breaker
+
+The client uses a circuit breaker to prevent hammering the API:
+
+```python
+# Circuit breaker settings
+CIRCUIT_BREAKER_THRESHOLD = 5  # Open after 5 consecutive 403s
+CIRCUIT_BREAKER_COOLDOWN = 300  # Wait 5 minutes
+
+# When circuit opens:
+# - API calls are skipped
+# - Logs indicate circuit is open
+# - After cooldown, circuit closes automatically
+```
+
+## Oddschecker API Client
+
+Oddschecker provides odds comparison data via web scraping.
+
+### Features
+
+- **Undetected ChromeDriver**: Bypasses Cloudflare protection
+- **Network Interception**: Captures API responses via CDP
+- **Parallel Processing**: Multiple browser instances (configurable)
+- **Market Expansion**: Auto-clicks collapsed markets
+- **Popup Handling**: Dismisses cookie banners and ads
+
+### Initialization
+
+```python SharedServices/api/oddschecker_api_client.py
+from PROPPR.SharedServices.api.oddschecker_api_client import OddsCheckerAPIClient
+
+client = OddsCheckerAPIClient(headless=True)
+```
+
+### Scrape League Fixtures
+
+```python
+# Scrape fixtures from a league page
+fixtures = client.scrape_league_fixtures(
+    league_path='football/english/premier-league'
+)
+
+for fixture in fixtures:
+    print(f"{fixture['home_team']} vs {fixture['away_team']}")
+    print(f"Start: {fixture['start_time']}")
+    print(f"URL: {fixture['fixture_url']}")
+```
+
+### Extract Market Data
+
+```python
+# Extract markets from a fixture page
+api_data, market_id_map = client.extract_market_ids_from_fixture(
+    fixture_url='https://www.oddschecker.com/football/liverpool-v-chelsea/winner'
+)
+
+print(f"Captured {len(api_data)} markets")
+
+for market in api_data:
+    market_name = market.get('marketTypeName')
+    market_id = market.get('marketId')
+    print(f"{market_name} (ID: {market_id})")
+    
+    # Extract odds
+    for runner in market.get('runners', []):
+        runner_name = runner.get('runnerName')
+        odds = runner.get('odds', {}).get('decimal')
+        print(f"  {runner_name}: {odds}")
+```
+
+### Process Single League
+
+```python
+# Process a league completely (scrape + extract)
+league = {
+    'name': 'Premier League',
+    'url': 'football/english/premier-league',
+    'priority': 1,
+    'country': 'England'
+}
+
+fixtures_with_markets = client.process_single_league(
+    league=league,
+    max_workers=1  # Sequential processing (most stable)
+)
+
+for fixture in fixtures_with_markets:
+    print(f"{fixture['home_team']} vs {fixture['away_team']}")
+    print(f"Markets: {len(fixture['api_data'])}")
+```
+
+### Configuration
+
+```python
+# From oddschecker_config.py
+ODDSCHECKER_HEADLESS = True
+ODDSCHECKER_PAGE_TIMEOUT = 30000  # 30 seconds
+ODDSCHECKER_API_WAIT_TIMEOUT = 30000
+ODDSCHECKER_MAX_RETRIES = 3
+ODDSCHECKER_RETRY_DELAY = 5
+ODDSCHECKER_MAX_DAYS_AHEAD = 7
+ODDSCHECKER_BATCH_SIZE = 10
+```
+
+## Overtime API Client
+
+Overtime provides decentralized betting markets on Optimism blockchain.
+
+### Features
+
+- **Response Hash Caching**: Minimizes API calls
+- **Rate Limiting**: Per-league request throttling
+- **Sport Filtering**: Automatic soccer league detection
+- **Quote API**: Get betting quotes with collateral support
+
+### Initialization
+
+```python SharedServices/api/overtime_api_client.py
+from PROPPR.SharedServices.api.overtime_api_client import OvertimeAPIClient
+
+client = OvertimeAPIClient(
+    api_key='your_api_key',
+    network_id=10  # Optimism
+)
+```
+
+### Fetch Markets
+
+```python
+# Fetch all soccer markets
+markets, response_hash = client.fetch_all_markets(
+    use_cache=True,
+    sport='Soccer',
+    status='open'
+)
+
+if markets:
+    print(f"Fetched {len(markets)} markets")
+    
+    for market in markets[:5]:
+        print(f"{market['homeTeam']} vs {market['awayTeam']}")
+        print(f"League: {market['leagueName']}")
+        print(f"Date: {market['maturityDate']}")
+elif markets is None:
+    print("No change since last request (cache hit)")
+```
+
+### Get Single Game
+
+```python
+# Fetch specific game by ID
+game = client.fetch_single_game(game_id='0x1234...')
+
+if game:
+    print(f"{game['homeTeam']} vs {game['awayTeam']}")
+    print(f"Odds: {game['odds']}")
+```
+
+### Get Quote
+
+```python
+# Get quote for a bet
+trade_data = [
+    {
+        'gameId': '0x1234...',
+        'position': 0,  # 0 = home, 1 = draw, 2 = away
+        'odds': 2.5
+    }
+]
+
+quote = client.get_quote(
+    buy_in=10.0,
+    trade_data=trade_data,
+    collateral='USDC'  # USDC, USDT, OVER, ETH
+)
+
+if quote:
+    print(f"Payout: {quote['payout']}")
+    print(f"Total quote: {quote['totalQuote']}")
+```
+
+### Get User History
+
+```python
+# Fetch user's betting history
+history = client.get_user_history(wallet_address='0xabc...')
+
+if history:
+    print(f"Open bets: {len(history['open'])}")
+    print(f"Claimable: {len(history['claimable'])}")
+    print(f"Closed: {len(history['closed'])}")
+```
+
+### Statistics
+
+```python
+# Get client stats
+stats = client.get_stats()
+
+print(f"Total requests: {stats['total_requests']}")
+print(f"Cache hits: {stats['cache_hits']}")
+print(f"Cache misses: {stats['cache_misses']}")
+print(f"API errors: {stats['api_errors']}")
+print(f"Rate limit waits: {stats['rate_limit_waits']}")
+
+# Reset stats
+client.reset_stats()
+
+# Clear cache
+client.clear_cache()
+```
+
+## Betfair Exchange Client
+
+Betfair provides exchange liquidity data.
+
+<Note>
+  Source: `SharedServices/api/betfair_exchange_liquidity.py`
+  
+  The Betfair client is implemented but not heavily used in current production. It provides exchange market data and liquidity information for advanced betting analysis.
+</Note>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Handle Rate Limits">
+    All clients have built-in rate limiting. Respect the limits to avoid API bans.
+  </Accordion>
+  
+  <Accordion title="Use Caching">
+    Enable response caching (Overtime, FotMob) to reduce API calls.
+  </Accordion>
+  
+  <Accordion title="Handle Circuit Breakers">
+    FotMob uses circuit breakers. Don't force API calls when circuit is open.
+  </Accordion>
+  
+  <Accordion title="Refresh Cookies">
+    For FotMob, ensure turnstile cookies are fresh. Implement auto-refresh.
+  </Accordion>
+  
+  <Accordion title="Use Headless Mode">
+    For Oddschecker, use headless=True in production for stability.
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling
+
+### FotMob
+
+```python
+try:
+    match_data = fotmob.get_match(12345)
+    if match_data is None:
+        # API blocked or circuit open
+        logger.warning("FotMob API unavailable")
+except Exception as e:
+    logger.error(f"FotMob error: {e}")
+```
+
+### Oddschecker
+
+```python
+try:
+    fixtures = client.scrape_league_fixtures('football/english/premier-league')
+except Exception as e:
+    if "target window already closed" in str(e):
+        # Browser crashed
+        logger.error("Browser crash - retry")
+    else:
+        logger.error(f"Oddschecker error: {e}")
+```
+
+### Overtime
+
+```python
+try:
+    markets, _ = client.fetch_all_markets()
+    if markets is None:
+        # No change (cache hit) or error
+        pass
+except requests.HTTPError as e:
+    if e.response.status_code == 401:
+        logger.error("Invalid API key")
+    elif e.response.status_code == 429:
+        logger.error("Rate limit exceeded")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Bet Grading" icon="trophy" href="/shared/grading">
+    See how API clients are used in grading
+  </Card>
+  <Card title="Market Mapping" icon="map" href="/shared/mapping">
+    Learn about stat type mapping
+  </Card>
+</CardGroup>

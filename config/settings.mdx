@@ -1,0 +1,513 @@
+---
+title: 'Settings'
+description: 'Non-sensitive configuration constants and settings for PROPPR platform'
+icon: 'gear'
+---
+
+## Overview
+
+The settings module contains all non-sensitive configuration constants that can be safely committed to version control. These settings control platform behavior, defaults, and operational parameters.
+
+<Info>
+Unlike credentials, these settings are safe to commit to Git and can be modified without security concerns.
+</Info>
+
+## API Configuration
+
+### Base URLs
+
+```python config/settings.py
+SPORTMONKS_BASE_URL = "https://api.sportmonks.com/v3/football"
+ODDS_API_BASE_URL = "https://api.odds-api.io/v3"
+ARB_API_URL = "https://api.odds-api.io/v3/arbitrage-bets"
+WEBSOCKET_URL = "wss://api.odds-api.io/v3/ws"
+```
+
+### Usage
+
+```python
+from PROPPR.config.settings import ODDS_API_BASE_URL, WEBSOCKET_URL
+
+# Construct API endpoint
+endpoint = f"{ODDS_API_BASE_URL}/odds/upcoming"
+
+# Connect to WebSocket
+await websocket.connect(WEBSOCKET_URL)
+```
+
+## MongoDB Collections
+
+### Collection Names
+
+```python
+COLLECTIONS = {
+    'player_alerts': 'all_positive_alerts',
+    'team_alerts': 'all_positive_team_alerts',
+    'cerebro_alerts': 'cerebro_positive_alerts',
+    'arbitrage_bets': 'arbitrage_bets',
+    'arb_user_settings': 'arb_user_settings',
+    'arb_alerts_sent': 'arb_alerts_sent',
+    'user_tracked_bets': 'user_tracked_bets',
+    'horse_racing_arbs': 'horse_racing_arbs',
+    'horse_user_settings': 'horse_user_settings',
+    'horse_alerts_sent': 'horse_alerts_sent',
+}
+```
+
+### Usage
+
+```python
+from PROPPR.config.settings import COLLECTIONS
+
+# Access collection
+collection = db[COLLECTIONS['player_alerts']]
+alerts = collection.find({'value_pct': {'$gt': 10}})
+```
+
+## Timing & Polling
+
+### Intervals
+
+```python config/settings.py
+POLLING_INTERVAL = 60  # seconds
+DEFAULT_GRADING_INTERVAL = 60  # seconds
+MIN_GRADING_INTERVAL = 60
+MAX_GRADING_INTERVAL = 600
+
+# Bot operational settings
+STARTUP_GRACE_PERIOD_MINUTES = 10
+BROADCAST_DELAY_SECONDS = 5
+CACHE_DURATION_MINUTES = 20
+```
+
+<Tip>
+The grading interval adjusts dynamically based on API rate limits and system load.
+</Tip>
+
+### Fixture States
+
+```python
+FINISHED_STATES = [5, 7, 8]  # FT, AET, FT_PEN
+INPLAY_STATES = [2, 3, 4, 6, 9]  # 1H, HT, BREAK, ET, PEN
+```
+
+## Default User Settings
+
+### Betting Defaults
+
+```python config/settings.py
+DEFAULT_STAKE = 100
+DEFAULT_MIN_ARB_MARGIN = 1.0
+DEFAULT_TIMEZONE = "Europe/London"
+DEFAULT_BANKROLL = 100
+DEFAULT_MIN_VALUE_PERCENT = 5.0
+DEFAULT_MAX_ODDS = 50.0
+DEFAULT_KELLY_FRACTION = 0.5
+```
+
+### Usage in User Settings
+
+```python
+from PROPPR.config.settings import DEFAULT_STAKE, DEFAULT_MIN_VALUE_PERCENT
+
+def create_user_settings(user_id: int):
+    return {
+        'user_id': user_id,
+        'stake': DEFAULT_STAKE,  # 100
+        'min_value_pct': DEFAULT_MIN_VALUE_PERCENT,  # 5.0
+        'timezone': DEFAULT_TIMEZONE,
+        'created_at': datetime.now()
+    }
+```
+
+## Exchange Configuration
+
+### Exchange Settings
+
+```python config/settings.py
+USD_TO_GBP_RATE = 0.79
+DEFAULT_EXCHANGE_COMMISSION = 2.0
+
+EXCHANGE_BOOKMAKERS = [
+    "Betfair Exchange",
+    "BetfairIT",
+    "Polymarket",
+    "Smarkets",
+    "SxBet"
+]
+
+DEFAULT_EXCHANGE_COMMISSIONS = {
+    "Betfair Exchange": 2.0,
+    "BetfairIT": 2.0,
+    "Polymarket": 2.0,
+    "Smarkets": 2.0,
+    "SxBet": 2.0
+}
+```
+
+### Sharp Bookmakers
+
+```python
+SHARP_BOOKMAKERS = {"FB Sports", "M88"}
+```
+
+<Warning>
+Sharp bookmakers cannot be used for arbitrage opportunities.
+</Warning>
+
+## League Classification
+
+### Main Leagues
+
+```python config/settings.py
+MAIN_LEAGUES = {
+    # Top European leagues
+    "England - Premier League",
+    "Spain - La Liga",
+    "Germany - Bundesliga",
+    "Italy - Serie A",
+    "France - Ligue 1",
+    "Netherlands - Eredivisie",
+    "Portugal - Primeira Liga",
+    "Belgium - Pro League",
+    
+    # Top international competitions
+    "UEFA Champions League",
+    "UEFA Europa League",
+    "FIFA World Cup",
+    "UEFA European Championship",
+    "Copa America",
+    
+    # Major domestic cups
+    "England - FA Cup",
+    "Spain - Copa del Rey",
+    "Germany - DFB-Pokal",
+    "Italy - Coppa Italia",
+    "France - Coupe de France",
+    
+    # Other major leagues
+    "Brazil - Serie A",
+    "Argentina - Primera Division",
+    "Mexico - Liga MX",
+    "United States - MLS"
+}
+```
+
+### Small Leagues
+
+```python
+SMALL_LEAGUES = {
+    # Women's leagues
+    "Liga MX, Women, Apertura",
+    "England - Women's Super League",
+    "Spain - Primera Division Femenina",
+    "Germany - Frauen-Bundesliga",
+    
+    # Lower tier competitions
+    "AFC Champions League Two",
+    "CAF Confederation Cup",
+    "CONCACAF Champions Cup",
+    "UEFA Conference League",
+    
+    # Development/Youth leagues
+    "Premier League 2",
+    "Championship",
+    "Serie B",
+    "Ligue 2",
+    "Segunda Division",
+    
+    # Regional leagues
+    "A-League",
+    "J1 League",
+    "K League 1",
+    "Chinese Super League",
+    "Indian Super League",
+    "MLS Next Pro",
+    "USL Championship"
+}
+```
+
+### Helper Functions
+
+```python
+from PROPPR.config.settings import is_small_league, is_main_league
+
+# Check league classification
+if is_main_league("England - Premier League"):
+    print("Top tier league!")
+
+if is_small_league("England - Women's Super League"):
+    print("Small league classification")
+
+# Auto-detection for women's leagues
+is_small_league("Any League Women")  # True (auto-detected)
+```
+
+## Bookmaker Configuration
+
+### Bookmaker Emojis
+
+```python config/settings.py
+BOOKMAKER_EMOJIS = {
+    "bet365": "B",
+    "williamhill": "W",
+    "betfair": "B",
+    "paddypower": "P",
+    "ladbrokes": "L",
+    "skybet": "S",
+    "overtime": "O"
+}
+```
+
+### Default Settings
+
+```python
+DEFAULT_BOOKMAKER_SETTINGS = {
+    "bet365": {"enabled": True, "min_odds": 1.5},
+    "williamhill": {"enabled": True, "min_odds": 1.5},
+    "betfair": {"enabled": True, "min_odds": 1.5},
+    "paddypower": {"enabled": False, "min_odds": 1.5},
+    "ladbrokes": {"enabled": False, "min_odds": 1.5},
+    "skybet": {"enabled": False, "min_odds": 1.5},
+    "overtime": {"enabled": True, "min_odds": 1.5}
+}
+```
+
+## Alert Emojis
+
+### Alert Components
+
+```python config/settings.py
+ALERT_EMOJI = {
+    "header": "money",
+    "event": "stadium",
+    "league": "flag",
+    "time": "clock",
+    "market": "star",
+    "bookmakers": "books",
+    "margin": "brain",
+    "stake": "pound",
+    "profit": "money",
+    "return": "arrow"
+}
+```
+
+### Market Emojis
+
+```python
+MARKET_EMOJIS = {
+    "Goals": "goal",
+    "Assists": "target",
+    "Shots": "target",
+    "Shots On Target": "target",
+    "Yellow Cards": "yellow_card",
+    "Tackles": "swords",
+    "Interceptions": "shield",
+    "Fouls Committed": "no_entry",
+    "Corners": "corner",
+    "Crosses": "refresh",
+    "Passes": "refresh",
+    "Long Balls": "target",
+    "Duels Won": "muscle",
+    "Aerial Duels Won": "airplane",
+    "Dribbles": "runner",
+    "Dispossessed": "x",
+    "Touches": "point_up",
+    "Key Passes": "key",
+    "Offsides": "no_entry",
+    "Clean Sheets": "shield",
+    "Saves": "goal_net"
+}
+```
+
+## Tier System
+
+### Tier Hierarchy
+
+```python config/settings.py
+TIER_HIERARCHY = [
+    "Reserve",
+    "Bench Player",
+    "Regular Starter",
+    "Proppr Founder",
+    "Club Legend"
+]
+```
+
+### Tier Access Levels
+
+<Tabs>
+  <Tab title="Reserve">
+    ```python
+    "Reserve": {
+        "commands": ["start", "tutorial", "pricing", "plans"],
+        "daily_limit": 5,
+        "features": ["basic_alerts"],
+        "description": "Basic access with limited daily alerts"
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Bench Player">
+    ```python
+    "Bench Player": {
+        "commands": ["start", "tutorial", "pricing", "plans", 
+                     "today", "tomorrow", "stats", "player"],
+        "daily_limit": 20,
+        "features": ["basic_alerts", "player_stats"],
+        "description": "Enhanced access with player statistics"
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Regular Starter">
+    ```python
+    "Regular Starter": {
+        "commands": ["start", "tutorial", "pricing", "plans",
+                     "today", "tomorrow", "stats", "player",
+                     "team", "league", "settings"],
+        "daily_limit": 50,
+        "features": ["all_alerts", "full_stats", "customization"],
+        "description": "Full bot access with customization options"
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Proppr Founder">
+    ```python
+    "Proppr Founder": {
+        "commands": "all",
+        "daily_limit": 200,
+        "features": ["premium_alerts", "priority_support", "beta_features"],
+        "description": "Premium access with priority support"
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Club Legend">
+    ```python
+    "Club Legend": {
+        "commands": "all",
+        "daily_limit": "unlimited",
+        "features": ["all_features", "exclusive_content"],
+        "description": "Unlimited access to all features"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Tier Pricing
+
+```python config/settings.py
+TIER_PRICING = {
+    "Reserve": "Free",
+    "Bench Player": "4.99/month",
+    "Regular Starter": "9.99/month",
+    "Proppr Founder": "19.99/month",
+    "Club Legend": "49.99/month"
+}
+```
+
+## Shared Configuration
+
+The `SharedServices/config/shared_config.py` provides centralized settings used across all services:
+
+### Bot Configurations
+
+```python SharedServices/config/shared_config.py
+BOT_CONFIGS = {
+    'player': {
+        'collection': 'all_positive_alerts',
+        'filter': {'player_id': {'$exists': True}},
+        'sheet_tab': 'Player',
+        'total_columns': 25,  # A-Y
+        'data_columns': 18,   # A-R (data only)
+        'formula_columns': 7, # S-Y (formulas)
+        'has_lineup_check': True,
+        'prioritize_tracked_bets': True
+    },
+    'team': {
+        'collection': 'all_positive_team_alerts',
+        'filter': {},
+        'sheet_tab': 'Team',
+        'total_columns': 27,  # A-AA
+        'data_columns': 19,   # A-S
+        'formula_columns': 8, # T-AA
+        'has_lineup_check': False,
+        'prioritize_tracked_bets': False
+    }
+}
+```
+
+### Google Sheets Configuration
+
+```python
+DEFAULT_BATCH_SIZE = 2000
+RATE_LIMITED_BATCH_SIZE = 1000
+BATCH_SIZE_INCREMENT = 1000
+MAX_BATCH_SIZE = 5000
+SHEETS_BOOKMAKER_FILTER = ["Bet365", "Overtime"]
+EXCLUDE_MARKET_AVG = True
+```
+
+### Backoff Configuration
+
+```python
+BACKOFF_MULTIPLIER = 2
+SPEEDUP_AFTER_SUCCESSES = 3
+SPEEDUP_DIVISOR = 2
+```
+
+## Logging Configuration
+
+```python config/settings.py
+LOG_LEVEL = "INFO"
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+```
+
+### Usage
+
+```python
+import logging
+from PROPPR.config.settings import LOG_LEVEL, LOG_FORMAT
+
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format=LOG_FORMAT
+)
+
+logger = logging.getLogger(__name__)
+logger.info("Service started")
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Import Constants" icon="code">
+    Always import settings rather than hardcoding values throughout your code.
+  </Card>
+  
+  <Card title="Document Changes" icon="file-lines">
+    When modifying settings, document the reason in comments or commit messages.
+  </Card>
+  
+  <Card title="Test Impact" icon="vial">
+    Settings changes can affect multiple services. Test thoroughly before deploying.
+  </Card>
+  
+  <Card title="Environment-Aware" icon="server">
+    Some settings may need environment-specific overrides in production.
+  </Card>
+</CardGroup>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Credentials" icon="key" href="/config/credentials">
+    Sensitive credentials and API keys configuration
+  </Card>
+  
+  <Card title="Presets" icon="sliders" href="/config/presets">
+    Alert presets and market optimization settings
+  </Card>
+</CardGroup>

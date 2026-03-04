@@ -1,0 +1,265 @@
+---
+title: 'SharedServices Overview'
+description: 'Shared utilities and services for all PROPPR bots'
+icon: 'layer-group'
+---
+
+## Introduction
+
+SharedServices is a centralized Python package that provides common utilities, services, and tools used across all PROPPR betting intelligence bots (Player Bot and Team Bot). It ensures consistency, reduces code duplication, and provides a unified interface for data processing, API interactions, and bet tracking.
+
+## Architecture
+
+SharedServices follows a modular architecture with specialized modules for different aspects of the betting intelligence platform:
+
+```python
+PROPPR.SharedServices/
+├── __init__.py              # Package initialization and exports
+├── config/                  # Configuration management
+├── grading/                 # Bet grading system
+├── mapping/                 # Data normalization
+├── tracking/                # Bet tracking
+├── api/                     # External API clients
+├── live/                    # Live match tracking
+├── sheets/                  # Google Sheets integration
+├── i18n/                    # Internationalization
+└── utils/                   # Utility functions
+```
+
+## Module Overview
+
+### Core Modules
+
+<CardGroup cols={2}>
+  <Card title="Grading" icon="trophy" href="/shared/grading">
+    Unified bet grading system with automated scheduling and result processing
+  </Card>
+  <Card title="Mapping" icon="map" href="/shared/mapping">
+    Data normalization for leagues, markets, and betting nomenclature
+  </Card>
+  <Card title="Tracking" icon="chart-line" href="/shared/tracking">
+    Bet tracking system with alert reconstruction and user statistics
+  </Card>
+  <Card title="API Clients" icon="plug" href="/shared/api-clients">
+    Integrated clients for FotMob, Oddschecker, Overtime, and Betfair
+  </Card>
+</CardGroup>
+
+## Import Patterns
+
+### Direct Imports
+
+SharedServices exports commonly used components at the package level:
+
+```python
+from PROPPR.SharedServices import (
+    # Configuration
+    MONGO_CONNECTION_STRING,
+    MONGO_DATABASE,
+    get_bot_config,
+    
+    # Mapping
+    LeagueNormalizer,
+    MarketResultMapper,
+    
+    # Tracking
+    BetTrackingSystem,
+    AlertReconstructionService,
+    
+    # Grading
+    ImmediateBetGrader,
+    
+    # API
+    get_fotmob_service,
+    
+    # Utils
+    comprehensive_normalize_text,
+    
+    # i18n
+    t,
+    SUPPORTED_LANGUAGES
+)
+```
+
+### Module-Specific Imports
+
+For specialized components, import from specific modules:
+
+```python
+# Grading schedulers
+from PROPPR.SharedServices.grading import (
+    UnifiedGradingScheduler,
+    UnifiedResultProcessor,
+    RateLimitException
+)
+
+# Market mapping
+from PROPPR.SharedServices.mapping import (
+    UnifiedMarketMapper,
+    CANONICAL_PLAYER_MARKETS
+)
+
+# API clients
+from PROPPR.SharedServices.api import (
+    OddsCheckerAPIClient,
+    OvertimeAPIClient
+)
+```
+
+## Configuration
+
+SharedServices uses centralized configuration from `PROPPR.SharedServices.config.shared_config`:
+
+```python
+from PROPPR.SharedServices.config.shared_config import (
+    # Database
+    MONGO_CONNECTION_STRING,
+    MONGO_DATABASE,
+    
+    # Grading intervals
+    DEFAULT_GRADING_INTERVAL,    # 300 seconds (5 minutes)
+    MIN_GRADING_INTERVAL,        # 60 seconds
+    MAX_GRADING_INTERVAL,        # 3600 seconds (1 hour)
+    
+    # Bot configurations
+    BOT_CONFIGS,
+    get_bot_config
+)
+```
+
+### Bot-Specific Configuration
+
+```python
+from PROPPR.SharedServices.config import get_bot_config
+
+# Get configuration for Player Bot
+player_config = get_bot_config('player')
+# Returns: {'filter': {'player_id': {'$exists': True}}, 'sheet_key': '...'}
+
+# Get configuration for Team Bot
+team_config = get_bot_config('team')
+# Returns: {'filter': {'team_id': {'$exists': True}}, 'sheet_key': '...'}
+```
+
+## Live Module (Optional)
+
+The live module requires the Telegram library and is imported with a fallback:
+
+```python
+try:
+    from PROPPR.SharedServices.live import (
+        LiveCommandHandler,
+        LiveStatsCollector
+    )
+except ImportError:
+    # Telegram library not available
+    LiveCommandHandler = None
+    LiveStatsCollector = None
+```
+
+## Common Use Cases
+
+### Initialize Grading System
+
+```python
+from PROPPR.SharedServices.grading import UnifiedGradingScheduler
+from PROPPR.config import (
+    get_mongo_connection_string,
+    get_mongo_database,
+    get_footystats_api_key,
+    get_google_credentials_path
+)
+
+scheduler = UnifiedGradingScheduler(
+    mongo_connection_string=get_mongo_connection_string(),
+    database_name=get_mongo_database(),
+    api_token=get_footystats_api_key(),
+    credentials_path=get_google_credentials_path(),
+    spreadsheet_name="PropprBotTracker",
+    bot_type='player'  # or 'team'
+)
+
+scheduler.start()
+```
+
+### Track User Bets
+
+```python
+from PROPPR.SharedServices import BetTrackingSystem
+
+tracker = BetTrackingSystem(
+    mongo_connection_string=MONGO_CONNECTION_STRING,
+    database_name=MONGO_DATABASE,
+    bot_type='player'
+)
+
+result = tracker.track_bet(
+    user_id=123456,
+    alert_data=alert,
+    actual_stake=10.0,
+    unit_size=1.0
+)
+```
+
+### Normalize League Names
+
+```python
+from PROPPR.SharedServices import LeagueNormalizer
+
+# Normalize league variations
+league = LeagueNormalizer.normalize("LaLiga")  # Returns: "La Liga"
+league = LeagueNormalizer.normalize("Liga Portugal")  # Returns: "Primeira Liga"
+```
+
+## Error Handling
+
+SharedServices includes comprehensive error handling:
+
+```python
+from PROPPR.SharedServices.grading.processors import RateLimitException
+
+try:
+    result = processor.process_all_alerts()
+except RateLimitException as e:
+    logger.warning(f"API rate limit hit: {e}")
+    # Backoff and retry logic
+except Exception as e:
+    logger.error(f"Unexpected error: {e}", exc_info=True)
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Centralized Configuration">
+    Always import configuration from `shared_config` to maintain consistency across bots.
+  </Accordion>
+  
+  <Accordion title="Handle Rate Limits">
+    Use the built-in rate limiting and backoff mechanisms in API clients and processors.
+  </Accordion>
+  
+  <Accordion title="Bot Type Detection">
+    Pass `bot_type='player'` or `bot_type='team'` to services that support both bot types.
+  </Accordion>
+  
+  <Accordion title="Logging">
+    Use Python's logging module consistently. SharedServices logs at INFO level by default.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Bet Grading" icon="trophy" href="/shared/grading">
+    Learn about the unified bet grading system
+  </Card>
+  <Card title="Data Mapping" icon="map" href="/shared/mapping">
+    Understand data normalization and canonical markets
+  </Card>
+  <Card title="Bet Tracking" icon="chart-line" href="/shared/tracking">
+    Explore user bet tracking features
+  </Card>
+  <Card title="API Clients" icon="plug" href="/shared/api-clients">
+    Integrate with external betting data providers
+  </Card>
+</CardGroup>

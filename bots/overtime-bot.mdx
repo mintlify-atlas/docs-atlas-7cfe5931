@@ -1,0 +1,638 @@
+---
+title: 'Overtime Bot'
+description: 'Automated crypto betting on Overtime Markets decentralized platform'
+icon: 'coins'
+---
+
+## Overview
+
+The **Proppr Overtime Bot** automatically places bets on Overtime Markets (decentralized sports betting platform) based on value bet signals from Team Bot, Player Bot, and EV Bot. It handles wallet management, transaction signing, and bet placement entirely on-chain.
+
+## Purpose
+
+Overtime Bot bridges the gap between PROPPR's statistical analysis and Overtime Markets' on-chain betting. It monitors value alerts, maps them to Overtime's available markets, calculates optimal stakes using unit sizing, and executes bets via smart contract interactions on Optimism network.
+
+## Markets Covered
+
+Overtime Bot supports all markets available on **Overtime Markets**:
+
+### Soccer/Football
+- Match Result (Moneyline)
+- Over/Under Goals (0.5, 1.5, 2.5, 3.5, 4.5)
+- Asian Handicap
+- Both Teams To Score
+- First Half Result
+- First Half Over/Under
+
+### American Sports
+- **NFL**: Spread, Totals, Moneyline
+- **NBA**: Spread, Totals, Moneyline, Player Props
+- **MLB**: Moneyline, Run Line, Totals  
+- **NHL**: Puck Line, Totals, Moneyline
+- **NCAAF/NCAAB**: Spreads, Totals
+
+### Other Sports
+- Tennis
+- Basketball (International)
+- Ice Hockey (International)
+- MMA/Boxing
+
+<Info>
+Overtime Bot only places bets on markets that exist on Overtime Markets. If a PROPPR alert has no matching Overtime market, it will be shown but not auto-bet.
+</Info>
+
+## Alert Criteria
+
+Bets are automatically placed when:
+
+1. **Value Alert Received**: Alert from Team Bot, Player Bot, or EV Bot
+2. **Market Exists**: Matching market available on Overtime
+3. **Odds Match**: Overtime odds within acceptable range of alert odds
+4. **Auto-Bet Enabled**: User has auto-betting turned on
+5. **Time Window**: Match starts within configured hours (default 24h)
+6. **Unit Budget**: Daily/concurrent bet limits not exceeded
+7. **Wallet Approved**: User's wallet is in approved list
+
+### Stake Calculation (Unit Sizing)
+
+```python
+# From overtime_bot.py:500-600
+def calculate_bet_stake(user_settings, alert_data, bankroll):
+    """
+    Calculate stake using unit sizing methodology.
+    
+    Stake Types:
+    1. Dynamic: Stake varies by EV% (higher EV = higher stake)
+    2. Fixed Daily: Same stake for all bets in a day
+    3. Fixed Unit: Fixed units per bet
+    
+    Unit Sizing:
+    - User defines unit size (e.g., 1 unit = $10)
+    - Bot calculates units based on EV or fixed amount
+    - Stake = units * unit_size
+    
+    Example (Dynamic):
+    - EV: 8%
+    - Min stake: 2%
+    - Max stake: 5%
+    - Calculated stake%: 2% + (8% - 3%) * 0.5 = 4.5%
+    - Units: 4.5 units
+    - Unit size: $10
+    - Stake: $45
+    """
+    stake_type = user_settings.get('stake_type', STAKE_TYPE_DYNAMIC)
+    unit_size = user_settings.get('unit_size_value', DEFAULT_UNIT_SIZE_VALUE)
+    bankroll = user_settings.get('bankroll', DEFAULT_BANKROLL)
+    
+    if stake_type == STAKE_TYPE_FIXED_UNIT:
+        # Fixed units per bet
+        units = user_settings.get('fixed_units', 1.0)
+        stake = units * unit_size
+    
+    elif stake_type == STAKE_TYPE_FIXED_DAILY:
+        # Fixed daily stake divided among all bets
+        daily_budget = user_settings.get('daily_budget', 100.0)
+        bets_today = count_user_bets_today(user_id)
+        remaining_budget = daily_budget - (bets_today * unit_size)
+        
+        if remaining_budget <= 0:
+            return 0  # No budget left
+        
+        units = 1.0  # 1 unit per bet
+        stake = min(unit_size, remaining_budget)
+    
+    else:  # STAKE_TYPE_DYNAMIC
+        # Dynamic: stake varies by EV%
+        ev_percent = alert_data.get('ev_percent', 0)
+        min_stake_pct = user_settings.get('min_stake_pct', DEFAULT_MIN_STAKE_PCT)
+        max_stake_pct = user_settings.get('max_stake_pct', DEFAULT_MAX_STAKE_PCT)
+        
+        # Linear scaling between min and max
+        if ev_percent <= 3:
+            stake_pct = min_stake_pct
+        elif ev_percent >= 10:
+            stake_pct = max_stake_pct
+        else:
+            # Interpolate
+            range_pct = max_stake_pct - min_stake_pct
+            ev_range = 10 - 3
+            stake_pct = min_stake_pct + ((ev_percent - 3) / ev_range) * range_pct
+        
+        stake = bankroll * (stake_pct / 100)
+        units = stake / unit_size
+    
+    # Enforce min/max stake amounts
+    min_alert_stake = user_settings.get('min_alert_stake', DEFAULT_MIN_ALERT_STAKE)
+    stake = max(stake, min_alert_stake)
+    
+    return round(stake, 2)
+```
+
+## User Commands
+
+<CodeGroup>
+
+```bash /start
+Initialize bot and connect wallet
+```
+
+```bash /wallet
+View connected wallet address and balance
+```
+
+```bash /connect [address]
+Connect Optimism wallet address for auto-betting
+```
+
+```bash /settings
+Configure auto-bet, stake sizing, and thresholds
+```
+
+```bash /value
+View current value opportunities on Overtime Markets
+```
+
+```bash /mybets
+View placed bets and performance
+```
+
+```bash /bankroll [amount]
+Set bankroll for dynamic stake calculations
+```
+
+```bash /units [size]
+Set unit size for stake calculations
+```
+
+```bash /autobet [on|off]
+Enable/disable automatic bet placement
+```
+
+```bash /limits
+Set daily and concurrent bet limits
+```
+
+```bash /help
+Display available commands
+```
+
+</CodeGroup>
+
+## Configuration Options
+
+### Auto-Bet Settings
+
+```python
+# Overtime Bot user configuration
+user_settings = {
+    "auto_bet_enabled": True,
+    "wallet_address": "0x...",          # Optimism wallet
+    "private_key": "encrypted",         # Encrypted private key
+    
+    # Stake sizing
+    "stake_type": "dynamic",            # dynamic | fixed_daily | fixed_unit
+    "bankroll": 1000.0,                 # Total bankroll
+    "unit_size_value": 10.0,            # 1 unit = $10
+    
+    # Dynamic staking
+    "min_stake_pct": 2.0,               # Min stake (% of bankroll)
+    "max_stake_pct": 5.0,               # Max stake (% of bankroll)
+    
+    # Fixed staking  
+    "fixed_units": 1.0,                 # Units per bet (fixed_unit mode)
+    "daily_budget": 100.0,              # Daily budget (fixed_daily mode)
+    
+    # Filters
+    "min_alert_stake": 5.0,             # Minimum stake to place bet
+    "autobet_hours_default": 24,        # Only bet on matches in next 24h
+    "max_odds_drop_pct": 10,            # Max acceptable odds drop %
+    
+    # Limits
+    "max_daily_bets": 10,               # Max bets per day
+    "max_concurrent_bets": 5            # Max active bets at once
+}
+```
+
+### Supported Markets Configuration
+
+```python
+# From config/constants.py:52-53
+SUPPORTED_MARKETS = [
+    "Match Result", "Moneyline",
+    "Over/Under", "Totals", "Goal Line",
+    "Spread", "Handicap", "Asian Handicap",
+    "Both Teams To Score",
+    "1st Half Result", "1st Half Over/Under"
+]
+```
+
+## Real Code Examples
+
+### Alert Processing Pipeline
+
+```python
+# From services/alerts/alert_processor.py:100-200
+class OvertimeAlertProcessor:
+    """
+    Process value alerts and map to Overtime markets.
+    """
+    
+    def process_value_alert(self, alert_data, source_bot):
+        """
+        Process incoming alert from Team/Player/EV Bot.
+        
+        Steps:
+        1. Parse alert data (fixture, market, odds, EV)
+        2. Find matching Overtime market
+        3. Check odds consistency
+        4. Calculate stake
+        5. Place bet if auto-bet enabled
+        """
+        # Extract alert details
+        fixture_id = alert_data.get('fixture_id')
+        market_name = alert_data.get('market_name')
+        bet_side = alert_data.get('bet_side')
+        alert_odds = alert_data.get('odds')
+        ev_percent = alert_data.get('ev_percent', 0)
+        
+        # Map to Overtime market
+        overtime_market = self.map_to_overtime_market(
+            fixture_id, market_name, bet_side
+        )
+        
+        if not overtime_market:
+            logger.info(f"No Overtime market found for {market_name}")
+            return None  # Show alert but don't auto-bet
+        
+        # Check odds haven't moved too much
+        overtime_odds = overtime_market['odds']
+        odds_drop_pct = ((alert_odds - overtime_odds) / alert_odds) * 100
+        
+        max_drop = user_settings.get('max_odds_drop_pct', MAX_ODDS_DROP_PCT_BEFORE_CONFIRM)
+        
+        if odds_drop_pct > max_drop:
+            logger.warning(
+                f"Odds dropped {odds_drop_pct:.1f}%: "
+                f"{alert_odds:.2f} -> {overtime_odds:.2f}"
+            )
+            return None  # Require manual confirmation
+        
+        # Calculate stake
+        stake = calculate_bet_stake(user_settings, alert_data, bankroll)
+        
+        if stake < user_settings.get('min_alert_stake', DEFAULT_MIN_ALERT_STAKE):
+            logger.info(f"Stake ${stake} below minimum, skipping")
+            return None
+        
+        # Check limits
+        if not self.check_betting_limits(user_id):
+            logger.info(f"User {user_id} exceeded betting limits")
+            return None
+        
+        # Create bet order
+        bet_order = {
+            'user_id': user_id,
+            'fixture_id': fixture_id,
+            'market_name': market_name,
+            'bet_side': bet_side,
+            'odds': overtime_odds,
+            'stake': stake,
+            'ev_percent': ev_percent,
+            'source': source_bot,
+            'overtime_market_id': overtime_market['id'],
+            'status': 'pending'
+        }
+        
+        # Place bet if auto-bet enabled
+        if user_settings.get('auto_bet_enabled', False):
+            result = self.bet_placer.place_bet(bet_order)
+            bet_order['status'] = 'placed' if result else 'failed'
+            bet_order['transaction_hash'] = result.get('tx_hash') if result else None
+        
+        return bet_order
+```
+
+### Blockchain Bet Placement
+
+```python
+# From services/alerts/bet_placer.py:50-150
+class OvertimeBetPlacer:
+    """
+    Place bets on Overtime Markets via smart contracts.
+    """
+    
+    def __init__(self, contract_service, wallet_service):
+        self.contract_service = contract_service
+        self.wallet_service = wallet_service
+    
+    def place_bet(self, bet_order):
+        """
+        Execute bet on Overtime Markets.
+        
+        Process:
+        1. Get user wallet credentials
+        2. Check wallet balance (USDC/ETH)
+        3. Approve USDC spend if needed
+        4. Call Overtime contract to place bet
+        5. Wait for transaction confirmation
+        6. Return transaction hash
+        """
+        user_id = bet_order['user_id']
+        market_id = bet_order['overtime_market_id']
+        stake = bet_order['stake']
+        position = self._map_position(bet_order['bet_side'])
+        
+        # Get wallet
+        wallet = self.wallet_service.get_user_wallet(user_id)
+        if not wallet:
+            logger.error(f"No wallet found for user {user_id}")
+            return None
+        
+        # Check balance
+        usdc_balance = self.wallet_service.get_usdc_balance(wallet['address'])
+        if usdc_balance < stake:
+            logger.error(f"Insufficient USDC: {usdc_balance} < {stake}")
+            return None
+        
+        try:
+            # Approve USDC spend (if not already approved)
+            if not self.contract_service.is_approved(wallet['address'], stake):
+                approve_tx = self.contract_service.approve_usdc(
+                    wallet['private_key'], stake
+                )
+                logger.info(f"USDC approved: {approve_tx}")
+            
+            # Place bet on Overtime contract
+            tx_hash = self.contract_service.buy_from_amm(
+                market_address=market_id,
+                position=position,
+                amount=stake,
+                slippage=0.02,  # 2% max slippage
+                private_key=wallet['private_key']
+            )
+            
+            logger.info(
+                f"Bet placed: ${stake} on {bet_order['market_name']} "
+                f"@ {bet_order['odds']:.2f} | TX: {tx_hash}"
+            )
+            
+            # Store bet in database
+            self._store_placed_bet(bet_order, tx_hash)
+            
+            return {
+                'success': True,
+                'tx_hash': tx_hash,
+                'block': None  # Will be updated when confirmed
+            }
+            
+        except Exception as e:
+            logger.error(f"Error placing bet: {e}")
+            return None
+    
+    def _map_position(self, bet_side):
+        """Map bet side to Overtime position index"""
+        # Overtime uses 0/1 for binary markets, 0/1/2 for 3-way
+        mapping = {
+            'home': 0,
+            'away': 1,
+            'draw': 2,
+            'over': 0,
+            'under': 1,
+            'yes': 0,
+            'no': 1
+        }
+        return mapping.get(bet_side.lower(), 0)
+```
+
+### Wallet Management
+
+```python
+# From services/blockchain/wallet_service.py:50-120
+class OvertimeWalletService:
+    """
+    Manage user wallets for Overtime betting.
+    """
+    
+    def connect_wallet(self, user_id, wallet_address, private_key=None):
+        """
+        Connect user wallet for auto-betting.
+        
+        Options:
+        1. View-only: Just address (for tracking bets)
+        2. Auto-bet: Address + encrypted private key
+        """
+        # Validate address
+        if not self._is_valid_address(wallet_address):
+            return {'success': False, 'error': 'Invalid address'}
+        
+        # Check if wallet is approved
+        if not self._is_wallet_approved(wallet_address):
+            return {
+                'success': False,
+                'error': 'Wallet not approved. Contact admin.'
+            }
+        
+        # Encrypt private key if provided
+        encrypted_key = None
+        if private_key:
+            encrypted_key = self._encrypt_private_key(private_key, user_id)
+        
+        # Store wallet connection
+        self.db['overtime_user_settings'].update_one(
+            {'user_id': user_id},
+            {'$set': {
+                'wallet_address': wallet_address,
+                'encrypted_private_key': encrypted_key,
+                'wallet_connected_at': datetime.now(timezone.utc),
+                'auto_bet_enabled': bool(private_key)  # Enable if key provided
+            }},
+            upsert=True
+        )
+        
+        logger.info(f"Wallet connected for user {user_id}: {wallet_address}")
+        
+        return {'success': True, 'address': wallet_address}
+    
+    def get_user_wallet(self, user_id):
+        """Get user's connected wallet"""
+        settings = self.db['overtime_user_settings'].find_one({'user_id': user_id})
+        
+        if not settings or not settings.get('wallet_address'):
+            return None
+        
+        wallet_data = {
+            'address': settings['wallet_address'],
+            'private_key': None
+        }
+        
+        # Decrypt private key if needed for auto-betting
+        if settings.get('encrypted_private_key'):
+            wallet_data['private_key'] = self._decrypt_private_key(
+                settings['encrypted_private_key'], user_id
+            )
+        
+        return wallet_data
+```
+
+### Value Alerts Integration
+
+```python
+# From overtime_bot.py:800-900
+def fetch_value_alerts_from_proppr():
+    """
+    Fetch value alerts from Team/Player/EV Bot collections.
+    
+    Monitors:
+    - all_positive_alerts (Player Bot)
+    - all_positive_team_alerts (Team Bot)
+    - all_value_bets (EV Bot)
+    
+    Filters:
+    - Updated in last 30 minutes (fresh alerts only)
+    - Matches in next 7 days
+    - Minimum EV threshold met
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=VALUE_REFRESH_WINDOW_MINUTES)
+    
+    alerts = []
+    
+    # Player Bot alerts
+    player_alerts = db['all_positive_alerts'].find({
+        'updated_at': {'$gte': cutoff},
+        'match_datetime': {
+            '$gte': now,
+            '$lte': now + timedelta(days=7)
+        }
+    }).limit(100)
+    
+    for alert in player_alerts:
+        alerts.append({
+            'source': 'player',
+            'fixture_id': alert['fixture_id'],
+            'market_name': alert['market_name'],
+            'bet_side': alert['player_name'],
+            'line': alert.get('line'),
+            'odds': alert['odds'],
+            'ev_percent': alert.get('ev_pct', 0),
+            'match_datetime': alert['match_datetime']
+        })
+    
+    # Team Bot alerts
+    team_alerts = db['all_positive_team_alerts'].find({
+        'updated_at': {'$gte': cutoff},
+        'match_datetime': {
+            '$gte': now,
+            '$lte': now + timedelta(days=7)
+        }
+    }).limit(100)
+    
+    for alert in team_alerts:
+        alerts.append({
+            'source': 'team',
+            'fixture_id': alert['fixture_id'],
+            'market_name': alert['market_name'],
+            'bet_side': alert['bet_side'],
+            'line': alert.get('line'),
+            'odds': alert['odds'],
+            'ev_percent': alert.get('ev_pct', 0),
+            'match_datetime': alert['match_datetime']
+        })
+    
+    # EV Bot alerts
+    ev_alerts = db['all_value_bets'].find({
+        'created_at': {'$gte': cutoff},
+        'match_date': {
+            '$gte': now,
+            '$lte': now + timedelta(days=7)
+        }
+    }).limit(100)
+    
+    for alert in ev_alerts:
+        alerts.append({
+            'source': 'ev',
+            'fixture_id': alert['event_id'],
+            'market_name': alert['market_name'],
+            'bet_side': alert['bet_side'],
+            'odds': alert['bookmaker_odds'],
+            'ev_percent': alert.get('expected_value', 0),
+            'match_datetime': alert['match_date']
+        })
+    
+    logger.info(f"Fetched {len(alerts)} value alerts from PROPPR bots")
+    return alerts
+```
+
+## Database Collections
+
+- **`overtime_user_settings`**: User configurations and wallet connections
+- **`overtime_placed_bets`**: Placed bets with transaction hashes
+- **`approved_wallets`**: Whitelist of approved wallet addresses
+- **`overtime_odds`**: Cached Overtime Markets odds
+- **`overtime_mappings`**: PROPPR fixture ↔ Overtime market mappings
+
+## Technical Architecture
+
+```
+OvertimeBot/
+├── core/
+│   ├── bot/
+│   │   └── overtime_bot.py        # Main bot logic (2000+ lines)
+│   ├── betting/
+│   │   └── contradiction_detector.py  # Detect conflicting bets
+│   └── validation/
+│       └── alert_validator.py     # Validate alerts before betting
+├── services/
+│   ├── alerts/
+│   │   ├── alert_processor.py     # Process value alerts
+│   │   └── bet_placer.py          # Place bets on Overtime
+│   └── blockchain/
+│       ├── contract_service.py    # Smart contract interactions
+│       └── wallet_service.py      # Wallet management
+└── config/
+    └── constants.py                # Configuration
+```
+
+## Security Considerations
+
+<Warning>
+**Private Key Handling**
+
+Private keys are:
+1. Encrypted using AES-256 with user-specific salt
+2. Never logged or exposed in API responses  
+3. Only decrypted in-memory when needed for transactions
+4. Stored separately from user data
+5. Whitelisted wallets only (approved_wallets collection)
+</Warning>
+
+```python
+# Encryption example (simplified)
+def _encrypt_private_key(self, private_key: str, user_id: int) -> str:
+    from cryptography.fernet import Fernet
+    
+    # Generate user-specific key
+    salt = hashlib.sha256(f"{user_id}:{SECRET_SALT}".encode()).digest()
+    cipher = Fernet(base64.urlsafe_b64encode(salt))
+    
+    encrypted = cipher.encrypt(private_key.encode())
+    return encrypted.decode()
+```
+
+<Card title="Source Code" icon="code" href="https://github.com/yourusername/PROPPR/tree/main/OvertimeBot">
+  View the complete Overtime Bot implementation
+</Card>
+
+## Related Bots
+
+<CardGroup cols={3}>
+  <Card title="Team Bot" icon="users" href="/bots/team-bot">
+    Team statistical alerts (source)
+  </Card>
+  <Card title="Player Bot" icon="user" href="/bots/player-bot">
+    Player prop alerts (source)
+  </Card>
+  <Card title="EV Bot" icon="chart-line" href="/bots/ev-bot">
+    EV+ alerts (source)
+  </Card>
+</CardGroup>

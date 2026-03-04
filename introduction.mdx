@@ -1,0 +1,281 @@
+---
+title: Introduction
+description: Real-time betting intelligence platform with automated value detection, arbitrage scanning, and alert distribution
+mode: custom
+---
+
+<div className="relative overflow-hidden bg-gradient-to-br from-[#059669] to-[#10b981] dark:from-[#065f46] dark:to-[#047857]">
+  <div className="absolute inset-0 bg-black/20"></div>
+  <div className="relative max-w-7xl mx-auto px-6 sm:px-8 py-20 sm:py-24 lg:py-28">
+    <div className="text-center">
+      <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-6">
+        PROPPR
+      </h1>
+      <p className="text-lg sm:text-xl text-white/90 max-w-3xl mx-auto mb-8">
+        Real-time betting intelligence platform with automated value detection, arbitrage scanning, and alert distribution via Telegram
+      </p>
+      <div className="flex flex-wrap gap-4 justify-center">
+        <a
+          href="/quickstart"
+          className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-[#059669] font-semibold hover:bg-gray-100 transition-colors"
+        >
+          Get started
+        </a>
+        <a
+          href="/architecture"
+          className="inline-flex items-center px-6 py-3 rounded-lg border border-white/30 bg-white/10 text-white font-semibold hover:bg-white/20 transition-colors"
+        >
+          View architecture
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="mb-16">
+    <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white mb-4">
+      Quick start
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 mb-8">
+      Get PROPPR up and running in minutes
+    </p>
+
+    <Steps>
+      <Step title="Clone the repository">
+        Clone the PROPPR repository to your local machine:
+        
+        ```bash
+        git clone https://github.com/Jayzinq/PROPPR.git
+        cd PROPPR
+        ```
+      </Step>
+
+      <Step title="Set up Python environment">
+        Create a virtual environment and install dependencies:
+        
+        ```bash
+        python -m venv venv
+        source venv/bin/activate  # On Windows: venv\Scripts\activate
+        pip install -r requirements.txt
+        ```
+      </Step>
+
+      <Step title="Configure credentials">
+        Set up your configuration file with MongoDB connection strings and API keys:
+        
+        ```python config/credentials.py
+        # MongoDB
+        MONGO_CONNECTION_STRING = "mongodb://..."
+        MONGO_DATABASE = "proppr"
+
+        # Telegram Bot Tokens
+        TEAM_BOT_TOKEN = "..."
+        PLAYER_BOT_TOKEN = "..."
+        EV_BOT_TOKEN = "..."
+
+        # External APIs
+        ODDS_API_KEY = "..."
+        ```
+      </Step>
+
+      <Step title="Run your first bot">
+        Start one of the alert bots to begin receiving notifications:
+        
+        ```bash
+        python -m PROPPR.PropprTeamBot.runners.run_team_bot
+        ```
+        
+        <Note>
+          The bot will connect to Telegram and start monitoring betting markets in real-time.
+        </Note>
+      </Step>
+    </Steps>
+  </div>
+
+  <div className="mb-16">
+    <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white mb-4">
+      Key features
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 mb-8">
+      Everything you need to automate betting intelligence
+    </p>
+
+    <CardGroup cols={2}>
+      <Card title="Arbitrage detection" icon="scale-balanced" href="/bots/arb-bot">
+        Real-time arbitrage detection across multiple bookmakers with automatic stake calculation
+      </Card>
+      <Card title="Expected value alerts" icon="chart-line" href="/bots/ev-bot">
+        Pinnacle-based EV calculations with Kelly criterion staking recommendations
+      </Card>
+      <Card title="Multi-sport coverage" icon="futbol" href="/services/alert-bots">
+        Team props, player props, horse racing, and blockchain betting markets
+      </Card>
+      <Card title="Automated grading" icon="check-circle" href="/shared/grading">
+        Automatic bet result tracking with P&L calculation and performance analytics
+      </Card>
+      <Card title="Real-time odds" icon="bolt" href="/data/websocket-updater">
+        WebSocket connections for live odds updates with minimal latency
+      </Card>
+      <Card title="Telegram delivery" icon="paper-plane" href="/services/alert-bots">
+        Instant alert distribution via Telegram with customizable settings
+      </Card>
+    </CardGroup>
+  </div>
+
+  <div className="mb-16">
+    <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white mb-4">
+      Explore by service
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 mb-8">
+      PROPPR is built as a microservices platform. Choose your area of interest:
+    </p>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <a
+        href="/bots/team-bot"
+        className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#10b981] dark:hover:border-[#10b981] transition-colors overflow-hidden no-underline bg-white dark:bg-[#1a1d27]"
+      >
+        <div className="p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            PropprTeamBot
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Team market alerts for goals, corners, cards, shots, fouls, and offsides
+          </p>
+          <div className="flex items-center text-sm text-[#10b981] group-hover:underline">
+            <span>Explore team bot</span>
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </div>
+      </a>
+
+      <a
+        href="/bots/player-bot"
+        className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#10b981] dark:hover:border-[#10b981] transition-colors overflow-hidden no-underline bg-white dark:bg-[#1a1d27]"
+      >
+        <div className="p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            PropprPlayerBot
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Player prop alerts for goals, assists, shots, passes, and tackles
+          </p>
+          <div className="flex items-center text-sm text-[#10b981] group-hover:underline">
+            <span>Explore player bot</span>
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </div>
+      </a>
+
+      <a
+        href="/bots/arb-bot"
+        className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#10b981] dark:hover:border-[#10b981] transition-colors overflow-hidden no-underline bg-white dark:bg-[#1a1d27]"
+      >
+        <div className="p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            PropprArbBot
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Arbitrage detection across bookmakers with stake calculation
+          </p>
+          <div className="flex items-center text-sm text-[#10b981] group-hover:underline">
+            <span>Explore arb bot</span>
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </div>
+      </a>
+
+      <a
+        href="/data/websocket-updater"
+        className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#10b981] dark:hover:border-[#10b981] transition-colors overflow-hidden no-underline bg-white dark:bg-[#1a1d27]"
+      >
+        <div className="p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            WebsocketUpdater
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Real-time odds updates via websocket connections
+          </p>
+          <div className="flex items-center text-sm text-[#10b981] group-hover:underline">
+            <span>Explore websocket service</span>
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <div className="mb-16">
+    <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white mb-4">
+      Platform architecture
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 mb-8">
+      PROPPR uses a microservices architecture with MongoDB for data storage and Telegram for alert delivery
+    </p>
+
+    <div className="rounded-xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] p-8">
+      <div className="space-y-6">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Data sources</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            OddsAPI, WebSocket feeds, FotMob stats, and Overtime blockchain data
+          </p>
+        </div>
+        <div className="h-px bg-gray-200 dark:bg-[#27272a]"></div>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Data layer</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            UnifiedAPIPoller, WebsocketUpdater, and StatsUpdateFM collect and normalize data
+          </p>
+        </div>
+        <div className="h-px bg-gray-200 dark:bg-[#27272a]"></div>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">MongoDB storage</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Centralized database for odds, fixtures, stats, and bet tracking
+          </p>
+        </div>
+        <div className="h-px bg-gray-200 dark:bg-[#27272a]"></div>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Alert services</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Six specialized bots: Team, Player, EV, Arb, Horse, and Overtime
+          </p>
+        </div>
+        <div className="h-px bg-gray-200 dark:bg-[#27272a]"></div>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Telegram channels</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Real-time alert distribution to subscribers
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+  <div className="rounded-2xl border border-gray-200 dark:border-[#27272a] bg-gradient-to-br from-[#10b981]/10 to-[#059669]/10 dark:from-[#065f46]/20 dark:to-[#047857]/20 p-8 sm:p-12">
+    <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white mb-4">
+      Ready to get started?
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 mb-6 max-w-2xl">
+      Follow our quickstart guide to set up PROPPR and start receiving betting alerts
+    </p>
+    <a
+      href="/quickstart"
+      className="inline-flex items-center px-6 py-3 rounded-lg bg-[#10b981] text-white font-semibold hover:bg-[#059669] transition-colors"
+    >
+      Get started
+    </a>
+  </div>
+</div>

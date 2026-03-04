@@ -1,0 +1,396 @@
+---
+title: 'systemd Services'
+description: 'Configure and manage PROPPR services with systemd'
+---
+
+## Overview
+
+PROPPR services run as systemd units for automatic startup, restart on failure, and centralized management.
+
+## Service Configuration
+
+### Bot Services
+
+Create systemd service files in `/etc/systemd/system/` for each bot:
+
+<CodeGroup>
+
+```ini team-bot.service
+[Unit]
+Description=PROPPR Team Bot
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proppr/PropprTeamBot
+Environment="PYTHONPATH=/opt"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3.11 -m PROPPR.PropprTeamBot.core.bot.team_bot
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proppr-team
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini player-bot.service
+[Unit]
+Description=PROPPR Player Bot
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proppr/PropprPlayerBot
+Environment="PYTHONPATH=/opt"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3.11 -m PROPPR.PropprPlayerBot.core.bot.player_bot
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proppr-player
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini ev-bot.service
+[Unit]
+Description=PROPPR Expected Value Bot
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proppr/PropprEVBot
+Environment="PYTHONPATH=/opt"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3.11 -m PROPPR.PropprEVBot.core.ev_calculator.calculator
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proppr-ev
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini arb-bot.service
+[Unit]
+Description=PROPPR Arbitrage Bot
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proppr/PropprArbBot
+Environment="PYTHONPATH=/opt"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3.11 -m PROPPR.PropprArbBot.core.scanner.arbitrage_scanner
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proppr-arb
+
+[Install]
+WantedBy=multi-user.target
+```
+
+</CodeGroup>
+
+### Data Services
+
+<CodeGroup>
+
+```ini websocket-updater.service
+[Unit]
+Description=PROPPR WebSocket Updater
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proppr/WebsocketUpdater
+Environment="PYTHONPATH=/opt"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3.11 -m PROPPR.WebsocketUpdater.core.websocket_updater
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proppr-websocket
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini unified-poller.service
+[Unit]
+Description=PROPPR Unified API Poller
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proppr/UnifiedAPIPoller
+Environment="PYTHONPATH=/opt"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3.11 -m PROPPR.UnifiedAPIPoller.core.unified_poller
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proppr-poller
+
+[Install]
+WantedBy=multi-user.target
+```
+
+</CodeGroup>
+
+### Grading Services
+
+<CodeGroup>
+
+```ini team-grader.service
+[Unit]
+Description=PROPPR Team Grading Scheduler
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proppr
+Environment="PYTHONPATH=/opt"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3.11 -c "from PROPPR.SharedServices.grading.scheduler.unified_scheduler import UnifiedGradingScheduler; from PROPPR.config import get_mongo_connection_string, get_mongo_database, get_footystats_api_key; scheduler = UnifiedGradingScheduler(mongo_connection_string=get_mongo_connection_string(), database_name=get_mongo_database(), api_token=get_footystats_api_key(), credentials_path='credentials.json', spreadsheet_name='PROPPR Team Bot', bot_type='team'); scheduler.start()"
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proppr-team-grader
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini player-grader.service
+[Unit]
+Description=PROPPR Player Grading Scheduler
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proppr
+Environment="PYTHONPATH=/opt"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3.11 -c "from PROPPR.SharedServices.grading.scheduler.unified_scheduler import UnifiedGradingScheduler; from PROPPR.config import get_mongo_connection_string, get_mongo_database, get_footystats_api_key; scheduler = UnifiedGradingScheduler(mongo_connection_string=get_mongo_connection_string(), database_name=get_mongo_database(), api_token=get_footystats_api_key(), credentials_path='credentials.json', spreadsheet_name='PROPPR Player Bot', bot_type='player'); scheduler.start()"
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proppr-player-grader
+
+[Install]
+WantedBy=multi-user.target
+```
+
+</CodeGroup>
+
+## Enable and Start Services
+
+<Steps>
+  <Step title="Reload systemd Configuration">
+    After creating service files, reload systemd:
+
+    ```bash
+    sudo systemctl daemon-reload
+    ```
+  </Step>
+
+  <Step title="Enable Services for Auto-Start">
+    Enable services to start automatically on boot:
+
+    ```bash
+    # Enable all bot services
+    sudo systemctl enable team-bot player-bot ev-bot arb-bot horse-bot overtime-bot
+
+    # Enable data services
+    sudo systemctl enable websocket-updater unified-poller
+
+    # Enable grading services
+    sudo systemctl enable team-grader player-grader
+    ```
+  </Step>
+
+  <Step title="Start Services">
+    Start all services:
+
+    ```bash
+    # Start all services at once
+    sudo systemctl start team-bot player-bot ev-bot arb-bot horse-bot overtime-bot \
+                          websocket-updater unified-poller team-grader player-grader
+    ```
+  </Step>
+</Steps>
+
+## Service Management Commands
+
+### Check Service Status
+
+```bash
+# Check status of all PROPPR services
+systemctl status 'proppr-*'
+
+# Check specific service
+systemctl status team-bot
+
+# List all PROPPR services
+systemctl list-units '*-bot' '*-updater' '*-poller' '*-grader'
+```
+
+### Start/Stop/Restart Services
+
+```bash
+# Restart a specific service
+sudo systemctl restart team-bot
+
+# Stop a service
+sudo systemctl stop player-bot
+
+# Start a service
+sudo systemctl start ev-bot
+
+# Restart all bot services
+sudo systemctl restart team-bot player-bot ev-bot arb-bot horse-bot overtime-bot
+```
+
+### View Service Logs
+
+```bash
+# Follow logs for a service
+journalctl -u team-bot -f
+
+# View last 100 lines
+journalctl -u player-bot -n 100
+
+# View logs since today
+journalctl -u ev-bot --since today
+
+# View logs with timestamps
+journalctl -u arb-bot -o short-iso
+```
+
+## Deployment Workflow
+
+The `push_and_restart.sh` script automates deployment from local to production:
+
+```bash scripts/deploy/push_and_restart.sh
+#!/bin/bash
+# Deploy changes to production server
+
+SERVER="46.224.85.158"
+PROPPR_LOCAL="/path/to/local/PROPPR"
+PROPPR_REMOTE="/opt/proppr"
+
+# Sync files to server
+rsync -avz --exclude '__pycache__' --exclude '*.pyc' --exclude 'tests' \
+    "$PROPPR_LOCAL/PropprTeamBot/" root@$SERVER:"$PROPPR_REMOTE/PropprTeamBot/"
+
+# Restart service
+ssh root@$SERVER "systemctl restart team-bot"
+```
+
+### Deploy Specific Module
+
+<Tabs>
+  <Tab title="Team Bot">
+    ```bash
+    ./scripts/deploy/push_and_restart.sh
+    # Select option 1
+    ```
+  </Tab>
+  <Tab title="All Services">
+    ```bash
+    ./scripts/deploy/push_and_restart.sh
+    # Select option 12
+    ```
+  </Tab>
+  <Tab title="Shared Services">
+    ```bash
+    ./scripts/deploy/push_and_restart.sh
+    # Select option 9
+    # Restarts all services that depend on SharedServices
+    ```
+  </Tab>
+</Tabs>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Service fails to start">
+    Check the service logs:
+    
+    ```bash
+    journalctl -u team-bot -n 50
+    ```
+    
+    Common issues:
+    - Missing Python dependencies
+    - Incorrect `PYTHONPATH`
+    - MongoDB not running
+    - Missing credentials in `.env`
+  </Accordion>
+
+  <Accordion title="Service keeps restarting">
+    Check for Python exceptions in logs:
+    
+    ```bash
+    journalctl -u team-bot -f | grep -i error
+    ```
+    
+    Increase `RestartSec` in service file to avoid rapid restart loops.
+  </Accordion>
+
+  <Accordion title="Cannot connect to MongoDB">
+    Verify MongoDB is running:
+    
+    ```bash
+    systemctl status mongod
+    ```
+    
+    Check MongoDB connection string in `/opt/proppr/.env`.
+  </Accordion>
+
+  <Accordion title="Permission denied errors">
+    Ensure service user has read access:
+    
+    ```bash
+    sudo chown -R root:root /opt/proppr
+    sudo chmod 755 /opt/proppr
+    sudo chmod 600 /opt/proppr/.env
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<Card title="Monitor Services" icon="chart-line" href="/deployment/monitoring">
+  Set up comprehensive monitoring and health checks
+</Card>

@@ -1,0 +1,372 @@
+---
+title: 'Mapping API'
+description: 'Market and league normalization services'
+icon: 'map'
+---
+
+## Overview
+
+The Mapping API provides normalization services for league names and market result mapping, ensuring consistent data across different data sources.
+
+## LeagueNormalizer
+
+### Normalize League Names
+
+```python
+from PROPPR.SharedServices.mapping.league_normalizer import LeagueNormalizer
+
+normalized = LeagueNormalizer.normalize("LaLiga")
+# Returns: "La Liga"
+
+normalized = LeagueNormalizer.normalize("Primera Division")
+# Returns: "La Liga"
+```
+
+<ParamField path="league_name" type="string" required>
+  League name to normalize
+</ParamField>
+
+<ResponseField name="normalized_name" type="string">
+  Canonical league name, or original if no mapping exists
+</ResponseField>
+
+### League Normalization Map
+
+The normalization map resolves data source inconsistencies:
+
+```python
+LEAGUE_NORMALIZATION_MAP = {
+    # Spain
+    "LaLiga": "La Liga",
+    "LaLiga 2": "La Liga 2",
+    
+    # Portugal
+    "Liga Portugal": "Primeira Liga",
+    
+    # England
+    "Enterprise National League": "National League",
+    
+    # Europe
+    "UEFA Conference League": "Europa Conference League",
+    
+    # Australia
+    "A-League Men": "A-League",
+    
+    # Japan
+    "J.League": "J-League",
+    
+    # Greece
+    "Super League Greece": "Super League",
+    
+    # Austria
+    "Admiral Bundesliga": "Bundesliga",
+    
+    # Argentina
+    "Liga Profesional de Futbol": "Liga Profesional",
+    
+    # Brazil
+    "Brasileiro Serie A": "Serie A",
+    
+    # Bolivia
+    "Division Profesional": "Liga De Futbol Prof",
+    "División Profesional": "Liga De Futbol Prof"
+}
+```
+
+## MarketResultMapper
+
+### Get Market Mapping
+
+```python
+from PROPPR.SharedServices.mapping.market_result_mapper import MarketResultMapper
+
+mapping = MarketResultMapper.get_mapping_for_market("Team Total Away")
+# Returns: {'type_id': 52, 'location': 'away', 'stat_type': 'goals'}
+```
+
+<ParamField path="market_name" type="string" required>
+  Market name (e.g., "Team Total Away", "Corners Totals")
+</ParamField>
+
+<ResponseField name="type_id" type="integer">
+  API type ID for statistic
+</ResponseField>
+
+<ResponseField name="location" type="string">
+  Location: "home", "away", "total", or "team_based"
+</ResponseField>
+
+<ResponseField name="stat_type" type="string">
+  Stat type: "goals", "corners", "cards", "shots", etc.
+</ResponseField>
+
+### Supported Markets
+
+<Accordion title="Goal Markets">
+  ```python
+  {
+      "Team Total Home": {"type_id": 52, "location": "home", "stat_type": "goals"},
+      "Team Total Away": {"type_id": 52, "location": "away", "stat_type": "goals"},
+      "Match Goals": {"type_id": 52, "location": "total", "stat_type": "goals"}
+  }
+  ```
+</Accordion>
+
+<Accordion title="Corner Markets">
+  ```python
+  {
+      "Corners Totals": {"type_id": 34, "location": "total", "stat_type": "corners"},
+      "Match Corners": {"type_id": 34, "location": "total", "stat_type": "corners"},
+      "Team Corners Home": {"type_id": 34, "location": "home", "stat_type": "corners"},
+      "Team Corners Away": {"type_id": 34, "location": "away", "stat_type": "corners"}
+  }
+  ```
+</Accordion>
+
+<Accordion title="Card/Booking Markets">
+  ```python
+  {
+      "Bookings Totals": {"type_id": 84, "location": "total", "stat_type": "cards"},
+      "Total Cards": {"type_id": 84, "location": "total", "stat_type": "cards"},
+      "Match Cards": {"type_id": 84, "location": "total", "stat_type": "cards"}
+  }
+  ```
+</Accordion>
+
+<Accordion title="Shot Markets">
+  ```python
+  {
+      "Total Shots": {"type_id": 42, "location": "total", "stat_type": "shots"},
+      "Team Shots On Target Home": {"type_id": 86, "location": "home", "stat_type": "shots_on_target"},
+      "Match Shots On Target": {"type_id": 86, "location": "total", "stat_type": "shots_on_target"}
+  }
+  ```
+</Accordion>
+
+## Extract Statistics
+
+### Extract Stat Value
+
+```python
+actual_value = MarketResultMapper.extract_stat_value(
+    statistics=fixture_statistics,
+    type_id=52,
+    location="away",
+    team_id=55,
+    suppress_warnings=False
+)
+```
+
+<ParamField path="statistics" type="array" required>
+  List of statistics from API response
+</ParamField>
+
+<ParamField path="type_id" type="integer" required>
+  API type ID for statistic
+</ParamField>
+
+<ParamField path="location" type="string" required>
+  "home", "away", or "total"
+</ParamField>
+
+<ParamField path="team_id" type="integer">
+  Team ID for team-specific stats
+</ParamField>
+
+<ParamField path="suppress_warnings" type="boolean" default="false">
+  Suppress warning logs (useful for live grading)
+</ParamField>
+
+<ResponseField name="value" type="float">
+  Actual statistic value, or None if not found
+</ResponseField>
+
+### Stat Extraction Logic
+
+1. **Location Priority**: Match by location ("home"/"away") first
+2. **Participant ID Fallback**: Match by participant_id if location fails
+3. **Total Calculation**: Sum home + away for total markets
+4. **Zero Default**: Return 0.0 for missing stats in common types
+
+## Calculate Results
+
+### Calculate Bet Result
+
+```python
+result = MarketResultMapper.calculate_bet_result(
+    actual_value=3.0,
+    threshold=2.5,
+    direction="over",
+    market_name="Totals"
+)
+# Returns: "won"
+```
+
+<ParamField path="actual_value" type="float" required>
+  Actual match statistic
+</ParamField>
+
+<ParamField path="threshold" type="float" required>
+  Bet threshold
+</ParamField>
+
+<ParamField path="direction" type="string" required>
+  "over" or "under"
+</ParamField>
+
+<ParamField path="market_name" type="string">
+  Market name to determine handicap type
+</ParamField>
+
+<ResponseField name="result" type="string">
+  "won", "lost", "refund", "half_win", or "half_loss"
+</ResponseField>
+
+### Result Logic
+
+**Standard Handicaps (0.5, 1.5, 2.5):**
+- Over: `actual > threshold` → Won, `actual <= threshold` → Lost
+- Under: `actual < threshold` → Won, `actual >= threshold` → Lost
+
+**Whole Number Handicaps (1.0, 2.0, 3.0):**
+- Over: `actual > threshold` → Won, `actual == threshold` → Refund, `actual < threshold` → Lost
+- Under: `actual < threshold` → Won, `actual == threshold` → Refund, `actual > threshold` → Lost
+
+**Quarter Handicaps (1.25, 1.75, 2.25, 2.75):**
+
+Split into two half bets:
+- 1.75 = Half on 1.5 + Half on 2.0
+- 2.25 = Half on 2.0 + Half on 2.5
+
+**Results:**
+- Both halves win → Won
+- Both halves lose → Lost
+- One wins, one refunds → Half Win
+- One loses, one refunds → Half Loss
+- Both refund → Refund
+
+## Prepare for Tracking
+
+### Add Result Tracking
+
+```python
+alert_doc = MarketResultMapper.prepare_alert_for_tracking(alert_doc)
+```
+
+<ParamField path="alert_doc" type="object" required>
+  Original alert document
+</ParamField>
+
+<ResponseField name="result_tracking" type="object">
+  Result tracking metadata
+  ```python
+  {
+      'api_type_id': 52,
+      'api_location': 'away',
+      'stat_type': 'goals',
+      'expected_threshold': 1.5,
+      'market_direction': 'over',
+      'result_status': 'pending',
+      'actual_value': None,
+      'calculated_at': None,
+      'api_response_id': None
+  }
+  ```
+</ResponseField>
+
+## Early Grading
+
+### Check Early Grade
+
+```python
+can_grade = MarketResultMapper.can_grade_early(
+    alert_doc=alert_doc,
+    actual_value=3.0
+)
+```
+
+<ParamField path="alert_doc" type="object" required>
+  Alert document with result tracking
+</ParamField>
+
+<ParamField path="actual_value" type="float" required>
+  Current actual value
+</ParamField>
+
+<ResponseField name="can_grade" type="boolean">
+  True if over bet exceeded threshold (can grade as won early)
+</ResponseField>
+
+**Early Grading Rules:**
+- Only "over" bets can be graded early
+- Only when `actual_value > threshold`
+- "Under" bets must wait until match ends
+
+## Helper Functions
+
+### Get Market Mapping
+
+```python
+from PROPPR.SharedServices.mapping.market_result_mapper import get_market_mapping
+
+mapping = get_market_mapping("Team Total Away")
+```
+
+### Calculate Result
+
+```python
+from PROPPR.SharedServices.mapping.market_result_mapper import calculate_result
+
+result = calculate_result(
+    actual_value=3.0,
+    threshold=2.5,
+    direction="over",
+    market_name="Totals"
+)
+```
+
+### Check Supported Market
+
+```python
+from PROPPR.SharedServices.mapping.market_result_mapper import is_supported_market
+
+supported = is_supported_market("Team Total Away")
+# Returns: True
+```
+
+## Example Usage
+
+### Complete Mapping Flow
+
+```python
+# Normalize league name
+league = LeagueNormalizer.normalize("LaLiga")
+# "La Liga"
+
+# Get market mapping
+mapping = MarketResultMapper.get_mapping_for_market("Team Total Away")
+# {'type_id': 52, 'location': 'away', 'stat_type': 'goals'}
+
+# Extract actual value
+actual_value = MarketResultMapper.extract_stat_value(
+    statistics=fixture_statistics,
+    type_id=mapping['type_id'],
+    location=mapping['location']
+)
+# 2.0
+
+# Calculate result
+result = MarketResultMapper.calculate_bet_result(
+    actual_value=actual_value,
+    threshold=1.5,
+    direction="over"
+)
+# "won"
+```
+
+## References
+
+- Source: `SharedServices/mapping/league_normalizer.py`
+- Source: `SharedServices/mapping/market_result_mapper.py`
+- Related: [Grading API](/api/grading-api)
+- Related: [Fixture Model](/api/models/fixture)
